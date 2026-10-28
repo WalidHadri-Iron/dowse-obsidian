@@ -6,6 +6,7 @@
 import type { App } from "obsidian";
 import { Model } from "../engine/model";
 import type { Dtype, Picture } from "../engine/protocol";
+import { chunks } from "../engine/searchtext.ts";
 import reference from "../../tests/reference/vectors.json";
 import inputs from "../../tests/reference/inputs.json";
 import screen from "../../tests/reference/screen-280.png";
@@ -74,13 +75,38 @@ async function one(dtype: Dtype, device: "auto" | "wasm") {
   }
 }
 
+/** Passages a second, by batch size: real passages (Dowse's 1,800-character cut of the long reference text). */
+async function throughput(dtype: Dtype, device: "auto" | "wasm", batches: number[]) {
+  const model = new Model();
+  try {
+    const ran = await model.load(dtype, device);
+    const long = (inputs.texts as Record<string, string>)["document-long"].replace(/^title: none \| text: /, "");
+    const passages = chunks(long).map((p) => `title: Greenhouse log | text: ${p}`);
+    while (passages.length < 32) passages.push(...passages);
+    await model.texts(passages.slice(0, 2));   // warm up (shaders)
+    const rates: Record<string, number> = {};
+    for (const size of batches) {
+      const count = Math.max(size * 2, 8);
+      const started = performance.now();
+      for (let i = 0; i < count; i += size) await model.texts(passages.slice(i, i + size));
+      rates[size] = count / ((performance.now() - started) / 1000);
+    }
+    return { dtype, asked: device, device: ran, passages_per_second: rates, passage_chars: passages[0].length };
+  } catch (error) {
+    return { dtype, asked: device, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    model.close();
+  }
+}
+
 export async function measureIfAsked(app: App): Promise<void> {
   const asked = "dowse-measure.json";
   if (!(await app.vault.adapter.exists(asked))) return;
-  const runs = JSON.parse(await app.vault.adapter.read(asked)) as { dtype: Dtype; device: "auto" | "wasm" }[];
+  const runs = JSON.parse(await app.vault.adapter.read(asked)) as
+    { dtype: Dtype; device: "auto" | "wasm"; batches?: number[] }[];
   const results = [];
   for (const run of runs) {
-    results.push(await one(run.dtype, run.device));
+    results.push(run.batches ? await throughput(run.dtype, run.device, run.batches) : await one(run.dtype, run.device));
     await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({ done: false, results }, null, 1));
   }
   const gpu = (navigator as any).gpu ? await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" }) : null;
