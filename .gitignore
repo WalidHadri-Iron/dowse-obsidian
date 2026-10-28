@@ -4,3 +4,4 @@ main.js
 .cache/
 build/
 measurements/*.tmp
+styles.css

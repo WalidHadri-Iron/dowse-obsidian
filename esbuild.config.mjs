@@ -7,11 +7,12 @@
 // `dev` adds the development hooks (src/dev): the reference measurement (Dowse's reference inputs and vectors, checked
 // inside Obsidian) and a test vault's requests (scripts/obsidian-run.mjs).
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { builtinModules } from "node:module";
 import esbuild from "esbuild";
+import sveltePlugin from "esbuild-svelte";
 
 const production = process.argv.includes("production");
 const dev = process.argv.includes("dev");
@@ -59,9 +60,16 @@ await esbuild.build({
   external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules],
   define: { DEV: JSON.stringify(dev) },
   loader: { ".png": "base64", ".f32": "base64" },
-  plugins: [inlined],
+  plugins: [inlined, sveltePlugin({ compilerOptions: { css: "external", dev: !production } })],
+  mainFields: ["svelte", "browser", "module", "main"],
+  conditions: ["svelte", "browser"],
   minify: production,
   sourcemap: production ? false : "inline",
   outfile: "main.js",
   logLevel: "info",
 });
+
+// styles.css, the one stylesheet Obsidian loads: the tokens and layout (src/styles.css), then the components' own
+writeFileSync("styles.css", readFileSync("src/styles.css", "utf8") +
+  (existsSync("main.css") ? "\n/* The components' styles */\n" + readFileSync("main.css", "utf8") : ""));
+rmSync("main.css", { force: true });

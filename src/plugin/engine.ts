@@ -6,6 +6,7 @@ import { Indexer, type Status } from "../engine/indexer.ts";
 import { Model } from "../engine/model.ts";
 import type { Dtype } from "../engine/protocol.ts";
 import { Store } from "../engine/store.ts";
+import { VaultSearch } from "./search.ts";
 import { isOn, type Settings } from "./settings.ts";
 import { VaultSource } from "./source.ts";
 
@@ -28,6 +29,7 @@ export function vaultKey(app: App): string {
 export class Engine {
   readonly store: Store;
   readonly indexer: Indexer;
+  readonly search: VaultSearch;
   model: ModelState = { state: "asleep" };
   private loaded: Model | null = null;
   private loading: Promise<Model> | null = null;
@@ -46,7 +48,11 @@ export class Engine {
       },
       busy,
       onStatus: () => this.changed(),
-      onSaved: () => this.changed(),
+      onSaved: () => { this.search.changed(); this.changed(); },
+    });
+    this.search = new VaultSearch(store, {
+      ready: () => { if (this.loaded) this.lastUsed = Date.now(); return this.loaded; },
+      wake: () => void this.use().catch(() => {}),
     });
     this.timer = window.setInterval(() => this.sleepIfIdle(), 60 * 1000);
   }
