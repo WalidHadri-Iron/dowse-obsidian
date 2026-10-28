@@ -4,4 +4,4 @@ declare module "inline:ort-wasm" { const gzippedBase64: string; export default g
 declare module "inline:ort-glue" { const source: string; export default source; }
 declare module "*.png" { const base64: string; export default base64; }
 declare module "*.f32" { const base64: string; export default base64; }
-declare const MEASURE: boolean;
+declare const DEV: boolean;

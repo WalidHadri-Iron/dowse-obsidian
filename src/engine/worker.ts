@@ -2,10 +2,10 @@
 // GPU through WebGPU where there is one, else on the processor through WebAssembly. Messages in: load, embed; out: the
 // answer to each (by id), and download progress.
 
-import "./web-only";   // first: a plain web worker, before transformers.js looks at where it is
+import "./web-only.ts";   // first: a plain web worker, before transformers.js looks at where it is
 import { AutoModel, AutoProcessor, RawImage, env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-web/webgpu";   // the same runtime transformers.js uses: its settings are these
-import type { Answer, Picture, Request } from "./protocol";
+import type { Answer, Picture, Request } from "./protocol.ts";
 
 const MODEL = "onnx-community/embeddinggemma-2-ONNX";
 

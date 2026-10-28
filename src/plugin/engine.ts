@@ -1,0 +1,134 @@
+// Dowse in one vault: its index, the indexer that keeps it in step, and the model, loaded when there's something to
+// read (or search) and let go after 10 idle minutes (it holds a lot of memory), as Dowse does.
+
+import type { App } from "obsidian";
+import { Indexer, type Status } from "../engine/indexer.ts";
+import { Model } from "../engine/model.ts";
+import type { Dtype } from "../engine/protocol.ts";
+import { Store } from "../engine/store.ts";
+import { isOn, type Settings } from "./settings.ts";
+import { VaultSource } from "./source.ts";
+
+export const DTYPE: Dtype = "fp16";   // the one build on both the GPU and the processor (measurements/README.md)
+export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/1`;
+const IDLE_MS = 10 * 60 * 1000;
+
+export interface ModelState {
+  state: "asleep" | "downloading" | "loading" | "ready" | "failed";
+  progress?: number;      // 0..1 while downloading
+  device?: string;        // "webgpu" or "wasm"
+  error?: string;
+}
+
+/** The vault's own key: Obsidian's id for it (one index per vault). */
+export function vaultKey(app: App): string {
+  return (app as any).appId ?? app.vault.getName();
+}
+
+export class Engine {
+  readonly store: Store;
+  readonly indexer: Indexer;
+  model: ModelState = { state: "asleep" };
+  private loaded: Model | null = null;
+  private loading: Promise<Model> | null = null;
+  private lastUsed = 0;
+  private timer: number;
+  private listeners = new Set<() => void>();
+  private downloads = new Map<string, [number, number]>();
+
+  private constructor(store: Store, app: App, settings: () => Settings, busy: () => boolean) {
+    this.store = store;
+    this.indexer = new Indexer(store, new VaultSource(app), {
+      active: (path) => isOn(settings(), path),
+      embed: async () => {
+        const model = await this.use();
+        return (prompts) => model.texts(prompts);
+      },
+      busy,
+      onStatus: () => this.changed(),
+      onSaved: () => this.changed(),
+    });
+    this.timer = window.setInterval(() => this.sleepIfIdle(), 60 * 1000);
+  }
+
+  static async open(app: App, settings: () => Settings, busy: () => boolean): Promise<Engine> {
+    const store = await Store.open(`dowse-${vaultKey(app)}`, MODEL_TAG);
+    return new Engine(store, app, settings, busy);
+  }
+
+  get status(): Status {
+    return this.indexer.status;
+  }
+
+  /** Called on any change worth showing (reading progress, the model's state). */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  private setModel(state: ModelState): void {
+    this.model = state;
+    this.changed();
+  }
+
+  /** The model, loaded (downloaded the first time) if it isn't. */
+  async use(): Promise<Model> {
+    this.lastUsed = Date.now();
+    if (this.loaded) return this.loaded;
+    this.loading ??= this.load();
+    try {
+      return await this.loading;
+    } finally {
+      this.loading = null;
+    }
+  }
+
+  private async load(): Promise<Model> {
+    this.downloads.clear();
+    this.setModel({ state: "loading" });
+    const model = new Model((file, loaded, total) => {
+      this.downloads.set(file, [loaded, total]);
+      const [got, all] = [...this.downloads.values()].reduce(([a, b], [c, d]) => [a + c, b + d], [0, 0]);
+      if (all > 0 && got < all) this.setModel({ state: "downloading", progress: got / all });
+    });
+    try {
+      const device = await model.load(DTYPE);
+      this.loaded = model;
+      this.setModel({ state: "ready", device });
+      return model;
+    } catch (error) {
+      model.close();
+      this.setModel({ state: "failed", error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  private sleepIfIdle(): void {
+    if (this.loaded && this.indexer.status.state === "idle" && Date.now() - this.lastUsed > IDLE_MS) {
+      this.loaded.close();
+      this.loaded = null;
+      this.setModel({ state: "asleep" });
+    }
+  }
+
+  start(): void {
+    void this.indexer.sync().then(() => this.indexer.run());
+  }
+
+  stop(): void {
+    this.indexer.stop();
+  }
+
+  close(): void {
+    window.clearInterval(this.timer);
+    this.indexer.stop();
+    this.loaded?.close();
+    this.loaded = null;
+    this.store.close();
+    this.listeners.clear();
+  }
+}

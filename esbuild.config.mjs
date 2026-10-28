@@ -2,9 +2,10 @@
 // inside it. Nothing that runs is fetched at run time (Obsidian's plugin policy); only the model's weights are
 // downloaded, once.
 //
-//   node esbuild.config.mjs [production] [measure]
+//   node esbuild.config.mjs [production] [dev]
 //
-// `measure` adds the reference measurement (src/dev): Dowse's reference inputs and vectors, checked inside Obsidian.
+// `dev` adds the development hooks (src/dev): the reference measurement (Dowse's reference inputs and vectors, checked
+// inside Obsidian) and a test vault's requests (scripts/obsidian-run.mjs).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ import { builtinModules } from "node:module";
 import esbuild from "esbuild";
 
 const production = process.argv.includes("production");
-const measure = process.argv.includes("measure");
+const dev = process.argv.includes("dev");
 
 // The ONNX runtime transformers.js was built against (its own copy if it has one): its WebAssembly and the script
 // that loads it, the build transformers.js asks for (asyncify: WebGPU and the processor in one)
@@ -56,7 +57,7 @@ await esbuild.build({
   platform: "browser",
   target: "es2022",
   external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules],
-  define: { MEASURE: JSON.stringify(measure) },
+  define: { DEV: JSON.stringify(dev) },
   loader: { ".png": "base64", ".f32": "base64" },
   plugins: [inlined],
   minify: production,

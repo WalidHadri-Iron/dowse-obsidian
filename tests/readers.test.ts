@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readPdfStep, type PdfLike } from "../src/engine/reading/pdf.ts";
 import { readCanvas } from "../src/engine/reading/canvas.ts";
 import { kindOf, titleOf } from "../src/engine/reading/types.ts";
+import { isOn, plainExclusions, turnOff, turnOn, DEFAULTS } from "../src/plugin/settings.ts";
 
 function pdf(pages: string[], title?: string): PdfLike {
   return {
@@ -51,4 +52,16 @@ test("files are known by their extension; a name that says nothing isn't a title
   assert.equal(titleOf("Photos/IMG_1001.md"), null);
   assert.equal(titleOf("Recipes/Grandma's soup.md"), "Grandma's soup");
   assert.equal(titleOf("x.md", "Untitled document"), null);
+});
+
+test("turning folders and files off and on", () => {
+  let s = turnOff(DEFAULTS, "Work/Clients");
+  s = turnOff(s, "Work/Clients/acme.md");   // already covered
+  assert.deepEqual(s.off, ["Work/Clients"]);
+  assert.equal(isOn(s, "Work/Clients/acme.md"), false);
+  assert.equal(isOn(s, "Work/Clients2/x.md"), true, "a folder with a longer name isn't covered");
+  s = turnOff(s, "Work");
+  assert.deepEqual(s.off, ["Work"], "the wider folder folds the narrower one in");
+  assert.deepEqual(turnOn(s, "Work").off, []);
+  assert.deepEqual(plainExclusions(["Templates/", "/^Daily.*/i", "Archive", 3]), ["Templates", "Archive"]);
 });

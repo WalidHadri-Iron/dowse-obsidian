@@ -4,7 +4,7 @@
 import workerSource from "inline:worker";
 import wasmPacked from "inline:ort-wasm";
 import glue from "inline:ort-glue";
-import type { Answer, Dtype, Picture, Request } from "./protocol";
+import type { Answer, Dtype, Picture, Request } from "./protocol.ts";
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
 type Ask<T> = T extends unknown ? Omit<T, "id"> : never;

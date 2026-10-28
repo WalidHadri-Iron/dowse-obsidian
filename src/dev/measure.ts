@@ -1,11 +1,11 @@
-// The reference measurement, inside Obsidian (development builds: `node esbuild.config.mjs measure`): Dowse's
+// The reference measurement, inside Obsidian (development builds: `node esbuild.config.mjs dev`): Dowse's
 // reference inputs embedded with each build of the model asked for, on the GPU (WebGPU) or the processor (WebAssembly),
 // against Dowse's reference vectors, with the time each took. Asked for by a note `dowse-measure.json` at the vault's
 // root ([{"dtype": "q4", "device": "auto"}, ...]); answered in `dowse-measure-result.json` beside it.
 
 import type { App } from "obsidian";
-import { Model } from "../engine/model";
-import type { Dtype, Picture } from "../engine/protocol";
+import { Model } from "../engine/model.ts";
+import type { Dtype, Picture } from "../engine/protocol.ts";
 import { chunks } from "../engine/searchtext.ts";
 import reference from "../../tests/reference/vectors.json";
 import inputs from "../../tests/reference/inputs.json";
