@@ -4,9 +4,11 @@
 export interface Settings {
   on: boolean;                 // the person turned Dowse on for this vault (the model is downloaded on that)
   off: string[];               // folders and files turned off, as vault paths
+  images: boolean;             // images, PDF scans and videos' frames read (the model's image part: 336 MB more)
+  sound: boolean;              // recordings and videos' sound read (the model's audio part: 587 MB more)
 }
 
-export const DEFAULTS: Settings = { on: false, off: [] };
+export const DEFAULTS: Settings = { on: false, off: [], images: false, sound: false };
 
 /** Whether `path` is searched: not under anything turned off (a folder covers what's in it). */
 export function isOn(settings: Settings, path: string): boolean {

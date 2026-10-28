@@ -6,7 +6,7 @@
 //                         the index, how long reading took, where the model ran. It may ask for more:
 //                         {"searches": ["…"], "view": "a query" (the Dowse tab opened on it), "layout": "wall" | "list",
 //                          "similar": "path of a note" (the sidebar opened on it), "quick": "a query" (Quick search,
-//                          typed into)}
+//                          typed into), "images": true, "sound": true (the model's parts turned on first)}
 
 import type DowsePlugin from "../main.ts";
 import { measureIfAsked } from "./measure.ts";
@@ -17,6 +17,8 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   await measureIfAsked(plugin.app);
   if (!(await adapter.exists("dowse-dev.json"))) return;
   const started = performance.now();
+  const wanted = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as { images?: boolean; sound?: boolean };
+  if (wanted.images !== undefined || wanted.sound !== undefined) await plugin.setParts({ images: wanted.images, sound: wanted.sound });
   if (!plugin.settings.on) await plugin.turnOn();
   const engine = plugin.engine!;
   await engine.indexer.settled();

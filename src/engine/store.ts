@@ -5,7 +5,7 @@
 // segments: its pieces: a passage, a page, a card; what keyword search keeps (`body`) and its vector (fp16 bytes).
 // meta: the model the vectors are of; an index of another model's vectors is cleared (one vector space, never two).
 
-import type { Kind, Piece } from "./reading/types.ts";
+import type { Kind, Modality, Piece } from "./reading/types.ts";
 
 export interface FileRow {
   path: string;
@@ -23,6 +23,7 @@ export interface SegmentRow {
   id?: number;
   path: string;
   kind: Piece["kind"];
+  modality: Modality;
   loc: number | null;
   locEnd: number | null;
   body: string;

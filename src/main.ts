@@ -137,6 +137,15 @@ export default class DowsePlugin extends Plugin {
     this.showStatus();
   }
 
+  /** The model's image or sound part turned on or off: what waited for it is read (the model loads it then). */
+  async setParts(change: { images?: boolean; sound?: boolean }): Promise<void> {
+    this.settings = { ...this.settings, ...change };
+    await this.save();
+    await this.engine?.indexer.sync();
+    this.showStatus();
+    this.notify();
+  }
+
   showStatus(): void {
     const text = this.engine ? statusText(this.engine) : "";
     this.statusBar.setText(text);

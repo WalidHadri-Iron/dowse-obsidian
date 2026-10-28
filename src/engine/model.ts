@@ -4,7 +4,7 @@
 import workerSource from "inline:worker";
 import wasmPacked from "inline:ort-wasm";
 import glue from "inline:ort-glue";
-import type { Answer, Dtype, Picture, Request } from "./protocol.ts";
+import type { Answer, Dtype, Parts, Picture, Request } from "./protocol.ts";
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
 type Ask<T> = T extends unknown ? Omit<T, "id"> : never;
@@ -22,6 +22,7 @@ export class Model {
   private pending = new Map<number, Pending>();
   device: string | null = null;   // where the model runs: "webgpu" or "wasm" (the processor)
   gpu: string | null = null;      // which graphics card, when it's the GPU
+  parts: Parts = { image: false, audio: false };   // the parts loaded besides text
 
   private onProgress: (file: string, loaded: number, total: number) => void;
 
@@ -56,10 +57,11 @@ export class Model {
   }
 
   /** Loads the model (downloaded the first time); answers where it runs: "webgpu" or "wasm" (the processor). */
-  async load(dtype: Dtype, device: "auto" | "wasm" = "auto"): Promise<string> {
+  async load(dtype: Dtype, device: "auto" | "wasm" = "auto", parts: Parts = { image: true, audio: true }): Promise<string> {
     const wasmBinary = await unpack(wasmPacked);
     const answer = await this.ask<{ device: string; gpu: string | null }>(
-      { op: "load", dtype, device, wasmBinary, glue }, [wasmBinary]);
+      { op: "load", dtype, device, parts, wasmBinary, glue }, [wasmBinary]);
+    this.parts = parts;
     this.device = answer.device;
     this.gpu = answer.gpu;
     return answer.device;

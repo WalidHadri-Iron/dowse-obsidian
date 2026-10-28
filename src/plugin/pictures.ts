@@ -1,5 +1,5 @@
 // Pictures for the wall: an image straight from the vault (Obsidian's own URL for it), a PDF's page drawn by the pdf.js
-// Obsidian carries, kept a while (a few hundred, then the oldest are let go).
+// Obsidian carries, a video's still at the moment that matched; kept a while (a few hundred, then the oldest go).
 
 import { type App, loadPdfJs } from "obsidian";
 import type { Piece } from "../ui/wall/piece.ts";
@@ -18,11 +18,12 @@ export class Pictures {
     const file = this.app.vault.getFileByPath(piece.path);
     if (!file) return Promise.resolve(null);
     if (piece.kind === "image") return Promise.resolve(this.app.vault.getResourcePath(file));
-    if (piece.kind !== "pdf") return Promise.resolve(null);
-    const key = `${piece.path}#${piece.loc ?? 1}@${pixels}`;
+    if (piece.kind !== "pdf" && piece.kind !== "video") return Promise.resolve(null);
+    const key = `${piece.path}#${piece.loc ?? (piece.kind === "pdf" ? 1 : 0)}@${pixels}`;
     let made = this.made.get(key);
     if (!made) {
-      made = this.page(piece.path, piece.loc ?? 1, pixels).catch(() => null);
+      made = (piece.kind === "pdf" ? this.page(piece.path, piece.loc ?? 1, pixels) : this.still(piece.path, piece.loc ?? 0, pixels))
+        .catch(() => null);
       this.made.set(key, made);
       this.trim();
     }
@@ -46,6 +47,34 @@ export class Pictures {
       return URL.createObjectURL(await canvas.convertToBlob({ type: "image/png" }));
     } finally {
       await document.destroy();
+    }
+  }
+
+  /** A video's picture `time` seconds in (a second in when it's from the start: past a fade from black). */
+  private async still(path: string, time: number, pixels: number): Promise<string | null> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return null;
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+    video.src = this.app.vault.getResourcePath(file);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("unreadable"));
+      });
+      await new Promise<void>((resolve, reject) => {
+        video.onseeked = () => resolve();
+        video.onerror = () => reject(new Error("unreadable"));
+        video.currentTime = Math.min(Math.max(time, 1), Math.max(video.duration - 0.1, 0));
+      });
+      const height = Math.round(pixels * video.videoHeight / video.videoWidth);
+      const canvas = new OffscreenCanvas(pixels, height);
+      canvas.getContext("2d")!.drawImage(video, 0, 0, pixels, height);
+      return URL.createObjectURL(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
+    } finally {
+      video.removeAttribute("src");
+      video.load();
     }
   }
 

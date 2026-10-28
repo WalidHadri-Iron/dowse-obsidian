@@ -10,8 +10,11 @@ export interface Picture {
   budget: number;
 }
 
+/** The model's parts beyond text: each is a download of its own (images 336 MB, sound 587 MB in fp16). */
+export interface Parts { image: boolean; audio: boolean }
+
 export type Request =
-  | { op: "load"; id: number; dtype: Dtype; device: "auto" | "wasm"; wasmBinary: ArrayBuffer; glue: string }
+  | { op: "load"; id: number; dtype: Dtype; device: "auto" | "wasm"; parts: Parts; wasmBinary: ArrayBuffer; glue: string }
   | { op: "embed"; id: number; texts?: string[]; images?: Picture[]; audio?: Float32Array[] };
 
 export type Answer =

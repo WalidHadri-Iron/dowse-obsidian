@@ -5,6 +5,7 @@ import { type App, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
 import { DTYPE } from "./engine.ts";
 import { isOn, plainExclusions } from "./settings.ts";
+import { kindOf } from "../engine/reading/types.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 
@@ -67,6 +68,26 @@ export class DowseSettingTab extends PluginSettingTab {
   private onView(el: HTMLElement): void {
     this.statusEl = el.createEl("p", { cls: "dowse-settings-status" });
     this.refreshStatus();
+
+    el.createEl("h3", { text: "Pictures and sound" });
+    const counts = { image: 0, audio: 0, video: 0, pdf: 0 } as Record<string, number>;
+    for (const file of this.app.vault.getFiles()) {
+      const kind = kindOf(file.path);
+      if (kind && kind in counts) counts[kind]++;
+    }
+    const many = (n: number, one: string, more: string) => `${n.toLocaleString()} ${n === 1 ? one : more}`;
+    new Setting(el).setName("Read images")
+      .setDesc(`What images show, the scanned pages of PDFs, and videos' pictures: this vault has ` +
+        `${many(counts.image, "image", "images")} and ${many(counts.video, "video", "videos")}. Downloads the model's ` +
+        `image part (336 MB) once. Off, they're found by name.`)
+      .addToggle((toggle) => toggle.setValue(this.plugin.settings.images)
+        .onChange(async (on) => { await this.plugin.setParts({ images: on }); this.refreshStatus(); }));
+    new Setting(el).setName("Read recordings and videos' sound")
+      .setDesc(`What's said and heard: this vault has ${many(counts.audio, "recording", "recordings")} and ` +
+        `${many(counts.video, "video", "videos")}. Downloads the model's audio part (587 MB) once. Off, they're found ` +
+        `by name.`)
+      .addToggle((toggle) => toggle.setValue(this.plugin.settings.sound)
+        .onChange(async (on) => { await this.plugin.setParts({ sound: on }); this.refreshStatus(); }));
 
     el.createEl("h3", { text: "What's searched" });
     el.createEl("p", { cls: "setting-item-description", text: "The whole vault, except what you turn off: " +

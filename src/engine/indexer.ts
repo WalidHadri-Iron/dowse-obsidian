@@ -1,24 +1,45 @@
 // Keeps the vault's index in step with the vault: finds what's new, changed or gone, and reads what's waiting, a step
-// at a time (a long note 40 passages at a time, a PDF 30 pages at a time), each step saved as it's read, so a stopped
-// run resumes where it was. You first: between passages it waits while you're typing.
+// at a time (a long note 40 passages, a PDF 30 pages, a recording or video ten minutes), each step saved as it's
+// read, so a stopped run resumes where it was. You first: between pieces it waits while you're typing.
+//
+// Every file of a kind Dowse knows has a row, so its name is searched; what's in an image, a recording or a video is
+// read once the model's part for it (images, sound) is on. Until then the row says what it waits for, and turning that
+// part on reads it, a PDF's scanned pages added to what was read of its text.
 
 import { readCanvas } from "./reading/canvas.ts";
 import { readNote } from "./reading/markdown.ts";
+import { averageHash, frameTimes, isScreenshot, mediaOptions, sameShot, windows, type MediaOptions } from "./reading/media.ts";
 import { readPdfStep, type PdfLike } from "./reading/pdf.ts";
-import { kindOf, READ_NOW, READERS, type Kind, type Piece } from "./reading/types.ts";
+import { kindOf, modalityOf, NEEDS, READERS, type Kind, type Piece } from "./reading/types.ts";
+import type { Parts, Picture } from "./protocol.ts";
 import { toHalf, type FileRow, type SegmentRow, type Store } from "./store.ts";
 
 export interface VaultFile { path: string; mtime: number; size: number }
 
-/** The vault, as the indexer needs it (Obsidian's vault in the plugin; a folder in the tests). */
+export type Pdf = PdfLike & { destroy?(): Promise<void> | void };
+
+/** The vault, as the indexer needs it (Obsidian's vault in the plugin; memory in the tests). */
 export interface Source {
   list(): VaultFile[];
   text(path: string): Promise<string>;
-  pdf(path: string): Promise<PdfLike & { destroy?(): Promise<void> | void }>;
+  pdf(path: string): Promise<Pdf>;
+  /** An image sized for `budget` (or one tall/wide enough to hold a token), or null: too small or unreadable. */
+  picture(path: string, budget: number, minSide: number): Promise<Picture | null>;
+  /** A PDF page drawn and sized for `budget`. */
+  page(pdf: Pdf, number: number, budget: number): Promise<Picture | null>;
+  /** A recording's (or a video's) sound, mono 16 kHz, or null: none, or too large to decode at once. */
+  sound(path: string): Promise<Float32Array | null>;
+  /** A video's length in seconds, and its frames at `times`, each sized for `budget` with its 8×8 grey levels. */
+  video(path: string): Promise<{ duration: number; frames(times: number[], budget: number):
+    Promise<{ time: number; picture: Picture; grey: number[] }[]>; close(): void } | null>;
 }
 
-/** Vectors for the model's prompts, one each. */
-export type Embed = (prompts: string[]) => Promise<Float32Array[]>;
+/** The model, as reading needs it. */
+export interface Embedder {
+  texts(prompts: string[]): Promise<Float32Array[]>;
+  images(pictures: Picture[]): Promise<Float32Array[]>;
+  audio(clips: Float32Array[]): Promise<Float32Array[]>;
+}
 
 export interface Status {
   state: "idle" | "reading" | "waiting" | "stopped";
@@ -32,7 +53,9 @@ export const DOC_STEP = 40;   // passages a step
 
 export interface IndexerOptions {
   active: (path: string) => boolean;      // chosen (not turned off)
-  embed: () => Promise<Embed>;            // the model, loaded when there's something to read
+  parts: () => Parts;                     // the model's parts that are on (images, sound)
+  embed: () => Promise<Embedder>;         // the model, loaded when there's something to read
+  gpu?: () => boolean;                    // on a GPU (bigger pictures, more frames), as far as is known
   busy?: () => boolean;                   // the person is typing: wait
   onStatus?: (status: Status) => void;
   onSaved?: (path: string) => void;       // a step saved: search sees it
@@ -62,11 +85,18 @@ export class Indexer {
 
   private readable(path: string): Kind | null {
     const kind = kindOf(path);
-    return kind && READ_NOW.has(kind) && this.options.active(path) ? kind : null;
+    return kind && this.options.active(path) ? kind : null;
+  }
+
+  /** The model's parts a file still waits for that are now on (then it's read). */
+  private nowReadable(row: FileRow): boolean {
+    const waiting = (row.info.waitingFor as string[] | undefined) ?? [];
+    const parts = this.options.parts();
+    return waiting.some((part) => parts[part as keyof Parts]);
   }
 
   /** The vault against the index: new, changed and unread files waiting, gone ones dropped (turned-off ones keep
-   * what's read of them). Answers how many files wait. */
+   * what's read of them), and those waiting for a part of the model that's now on. Answers how many files wait. */
   async sync(): Promise<number> {
     const rows = new Map((await this.store.files()).map((row) => [row.path, row]));
     const present = new Set<string>();
@@ -77,6 +107,7 @@ export class Indexer {
       if (!kind) continue;
       const stale = !row || row.mtime !== file.mtime || row.size !== file.size || row.reader < READERS[kind];
       if (stale) await this.store.putFile(this.pending(file, kind, row));
+      else if (row.state === "done" && this.nowReadable(row)) await this.store.putFile({ ...row, state: "pending", next: null });
     }
     for (const path of rows.keys()) if (!present.has(path)) await this.store.remove(path);
     const waiting = (await this.waiting()).length;
@@ -87,7 +118,7 @@ export class Indexer {
 
   private pending(file: VaultFile, kind: Kind, previous?: FileRow): FileRow {
     return { path: file.path, kind, mtime: file.mtime, size: file.size, state: "pending",
-             info: previous?.info ?? {}, next: null, reader: previous?.reader ?? 0 };
+             info: {}, next: null, reader: previous?.reader ?? 0 };
   }
 
   /** What waits, the most recently changed first (the note you just wrote before last year's). */
@@ -174,9 +205,22 @@ export class Indexer {
     if (this.status.state === "waiting") this.report({ state: "reading" });
   }
 
+  private media(): MediaOptions {
+    return mediaOptions(this.options.gpu?.() ?? true);
+  }
+
+  /** The model's parts `kind` needs that are off: it's searched by name (and read when they're on). */
+  private missing(kind: Kind): ("image" | "audio")[] {
+    const parts = this.options.parts();
+    return NEEDS[kind].filter((part) => !parts[part]);
+  }
+
   private async read(row: FileRow): Promise<void> {
     try {
       if (row.kind === "pdf") await this.readPdf(row);
+      else if (row.kind === "image") await this.readImage(row);
+      else if (row.kind === "audio") await this.readAudio(row);
+      else if (row.kind === "video") await this.readVideo(row);
       else await this.readText(row);
     } catch (error) {
       const latest = await this.store.file(row.path);
@@ -204,16 +248,41 @@ export class Indexer {
     }
   }
 
+  /** A PDF, 30 pages a step: pages with text as passages, the others (scans, slides) as pictures once images are on.
+   * Read before images were on, only its pictures are read now, added to what's there. */
   private async readPdf(row: FileRow): Promise<void> {
     const pdf = await this.source.pdf(row.path);
+    const media = this.media();
     try {
+      const adding = (row.info.waitingFor as string[] | undefined)?.includes("image") && row.next === null &&
+        this.options.parts().image && Array.isArray(row.info.pictures);
+      if (adding) {
+        const pieces: Piece[] = [];
+        for (const number of row.info.pictures as number[]) {
+          const picture = await this.source.page(pdf, number, media.page);
+          if (picture) pieces.push({ kind: "page", text: null, picture, body: "", loc: number });
+        }
+        const segments = await this.embed(pieces);
+        if (segments) await this.save(row, segments, { ...row.info, waitingFor: undefined }, null, false);
+        return;
+      }
       let start: number | null = row.next ?? 0;
       let first = start === 0;
+      let info = first ? {} : { ...row.info };
       while (start !== null && !this.stopped) {
         const step = await readPdfStep(row.path, pdf, start);
+        const pictures = [...((info as { pictures?: number[] }).pictures ?? []), ...((step.info.pictures as number[]) ?? [])];
+        if (this.options.parts().image) {   // the step's scanned pages, as pictures (their few words stay for keywords)
+          for (const number of (step.info.pictures as number[]) ?? []) {
+            const picture = await this.source.page(pdf, number, media.page);
+            if (picture) step.pieces.push({ kind: "page", text: null, picture, body: "", loc: number });
+          }
+        }
+        info = { ...info, ...step.info, ...(pictures.length ? { pictures } : {}),
+                 waitingFor: pictures.length && !this.options.parts().image ? ["image"] : undefined };
         const segments = await this.embed(step.pieces);
         if (!segments) return;
-        if (!(await this.save(row, segments, step.info, step.next, first))) return;
+        if (!(await this.save(row, segments, info, step.next, first))) return;
         start = step.next;
         first = false;
       }
@@ -222,19 +291,107 @@ export class Indexer {
     }
   }
 
-  /** The pieces' vectors, a passage at a time (a GPU reads no faster in batches; one at a time lets you go first). */
+  /** Searched by name until the model's part for it is on. */
+  private async byName(row: FileRow, missing: string[]): Promise<void> {
+    await this.save(row, [], { waitingFor: missing }, null, true);
+  }
+
+  private async readImage(row: FileRow): Promise<void> {
+    const missing = this.missing("image");
+    if (missing.length) return this.byName(row, missing);
+    const media = this.media();
+    const picture = await this.source.picture(row.path, isScreenshot(row.path) ? media.screenshot : media.photo, media.minSide);
+    if (!picture) {
+      await this.save(row, [], { note: "too small or unreadable: searched by name" }, null, true);
+      return;
+    }
+    const segments = await this.embed([{ kind: "image", text: null, picture, body: "", loc: null }]);
+    if (segments) await this.save(row, segments, { width: picture.width, height: picture.height }, null, true);
+  }
+
+  /** A recording: its sound in windows, ten minutes a step (five on a processor). */
+  private async readAudio(row: FileRow): Promise<void> {
+    const missing = this.missing("audio");
+    if (missing.length) return this.byName(row, missing);
+    const media = this.media();
+    const samples = await this.source.sound(row.path);
+    if (!samples) {
+      await this.save(row, [], { note: "no sound Dowse can read: searched by name" }, null, true);
+      return;
+    }
+    const duration = samples.length / 16000;
+    let start = row.next ?? 0;
+    while (start < duration && !this.stopped) {
+      const stop = start + media.step;
+      const pieces: Piece[] = windows(samples, start, stop, media.window, media.hop)
+        .map((w) => ({ kind: "audio", text: null, sound: w.samples, body: "", loc: w.start, locEnd: w.end }));
+      const segments = await this.embed(pieces);
+      if (!segments) return;
+      if (!(await this.save(row, segments, { duration: Math.round(duration * 10) / 10 }, stop < duration ? stop : null, start === 0))) return;
+      start = stop;
+    }
+  }
+
+  /** A video: a frame every few seconds, one a shot (as Dowse keeps them), and its sound, ten minutes a step. */
+  private async readVideo(row: FileRow): Promise<void> {
+    const parts = this.options.parts();
+    if (!parts.image && !parts.audio) return this.byName(row, ["image", "audio"]);
+    const media = this.media();
+    const video = await this.source.video(row.path);
+    if (!video) {
+      await this.save(row, [], { note: "a video Dowse can't play: searched by name" }, null, true);
+      return;
+    }
+    try {
+      const samples = parts.audio ? await this.source.sound(row.path) : null;
+      const duration = video.duration;
+      let start = row.next ?? 0;
+      let lastHash: bigint | null = start && typeof row.info.frameHash === "string" ? BigInt(row.info.frameHash) : null;
+      while (start < duration && !this.stopped) {
+        const stop = start + media.step;
+        const pieces: Piece[] = [];
+        if (parts.image) {
+          for (const frame of await video.frames(frameTimes(duration, media.frameInterval, media.maxFrames, start, stop), media.frame)) {
+            const hash = averageHash(frame.grey);
+            if (sameShot(lastHash, hash)) continue;   // the same shot: the frame kept before stands for it
+            lastHash = hash;
+            pieces.push({ kind: "frame", text: null, picture: frame.picture, body: "", loc: frame.time });
+          }
+        }
+        if (samples) {
+          for (const w of windows(samples, start, stop, media.window, media.hop)) {
+            pieces.push({ kind: "audio", text: null, sound: w.samples, body: "", loc: w.start, locEnd: w.end });
+          }
+        }
+        const segments = await this.embed(pieces);
+        if (!segments) return;
+        const missing = NEEDS.video.filter((part) => !parts[part]);
+        const info = { duration: Math.round(duration * 10) / 10, ...(lastHash !== null ? { frameHash: lastHash.toString() } : {}),
+                       ...(missing.length ? { waitingFor: missing } : {}) };
+        if (!(await this.save(row, segments, info, stop < duration ? stop : null, start === 0))) return;
+        start = stop;
+      }
+    } finally {
+      video.close();
+    }
+  }
+
+  /** The pieces' vectors, a piece at a time (a GPU reads no faster in batches; one at a time lets you go first). */
   private async embed(pieces: Piece[]): Promise<SegmentRow[] | null> {
     const out: SegmentRow[] = [];
-    let model: Embed | null = null;
+    let model: Embedder | null = null;
     for (const piece of pieces) {
       await this.pause();
       if (this.stopped) return null;
       let vector: ArrayBuffer | null = null;
-      if (piece.text !== null) {
+      const modality = modalityOf(piece);
+      if (modality !== "none") {
         model ??= await this.options.embed();
-        vector = toHalf((await model([piece.text]))[0]);
+        const [made] = piece.text !== null ? await model.texts([piece.text])
+          : piece.picture ? await model.images([piece.picture]) : await model.audio([piece.sound!]);
+        vector = toHalf(made);
       }
-      out.push({ path: "", kind: piece.kind, loc: piece.loc, locEnd: piece.locEnd ?? null, body: piece.body, vector });
+      out.push({ path: "", kind: piece.kind, modality, loc: piece.loc, locEnd: piece.locEnd ?? null, body: piece.body, vector });
     }
     return out;
   }
@@ -244,7 +401,8 @@ export class Indexer {
                      restart: boolean): Promise<boolean> {
     const latest = await this.store.file(row.path);
     if (!latest || latest.mtime !== row.mtime || latest.size !== row.size) return false;
-    const saved: FileRow = { ...row, info, next, state: next === null ? "done" : "pending", reader: READERS[row.kind] };
+    const kept = Object.fromEntries(Object.entries(info).filter(([, value]) => value !== undefined));
+    const saved: FileRow = { ...row, info: kept, next, state: next === null ? "done" : "pending", reader: READERS[row.kind] };
     delete saved.detail;
     await this.store.saveStep(saved, segments, restart);
     Object.assign(row, saved);

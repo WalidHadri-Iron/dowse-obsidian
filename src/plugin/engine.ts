@@ -4,7 +4,7 @@
 import type { App } from "obsidian";
 import { Indexer, type Status } from "../engine/indexer.ts";
 import { Model } from "../engine/model.ts";
-import type { Dtype } from "../engine/protocol.ts";
+import type { Dtype, Parts } from "../engine/protocol.ts";
 import { Store } from "../engine/store.ts";
 import { VaultSearch } from "./search.ts";
 import { isOn, type Settings } from "./settings.ts";
@@ -37,15 +37,19 @@ export class Engine {
   private timer: number;
   private listeners = new Set<() => void>();
   private downloads = new Map<string, [number, number]>();
+  private settings: () => Settings;
 
   private constructor(store: Store, app: App, settings: () => Settings, busy: () => boolean) {
     this.store = store;
+    this.settings = settings;
     this.indexer = new Indexer(store, new VaultSource(app), {
       active: (path) => isOn(settings(), path),
+      parts: () => this.parts(),
       embed: async () => {
         const model = await this.use();
-        return (prompts) => model.texts(prompts);
+        return { texts: (p) => model.texts(p), images: (p) => model.images(p), audio: (c) => model.audio(c) };
       },
+      gpu: () => this.model.device !== "wasm",
       busy,
       onStatus: () => this.changed(),
       onSaved: () => { this.search.changed(); this.changed(); },
@@ -81,9 +85,20 @@ export class Engine {
     this.changed();
   }
 
-  /** The model, loaded (downloaded the first time) if it isn't. */
+  /** The model's parts that are on (Settings › Dowse). */
+  parts(): Parts {
+    const settings = this.settings();
+    return { image: settings.images, audio: settings.sound };
+  }
+
+  /** The model, loaded (downloaded the first time) if it isn't, with the parts that are on. */
   async use(): Promise<Model> {
     this.lastUsed = Date.now();
+    const parts = this.parts();
+    if (this.loaded && ((parts.image && !this.loaded.parts.image) || (parts.audio && !this.loaded.parts.audio))) {
+      this.loaded.close();   // a part was turned on: loaded again with it
+      this.loaded = null;
+    }
     if (this.loaded) return this.loaded;
     this.loading ??= this.load();
     try {
@@ -102,7 +117,7 @@ export class Engine {
       if (all > 0 && got < all) this.setModel({ state: "downloading", progress: got / all });
     });
     try {
-      const device = await model.load(DTYPE);
+      const device = await model.load(DTYPE, "auto", this.parts());
       this.loaded = model;
       this.setModel({ state: "ready", device });
       return model;

@@ -1,17 +1,26 @@
-// What reading a file gives: pieces, each a passage (or later a picture, a sound) and where it is in the file. Dowse's
-// `Piece`, for a vault.
+// What reading a file gives: pieces, each a passage, a picture or a stretch of sound, and where it is in the file.
+// Dowse's `Piece`, for a vault.
+
+import type { Picture } from "../protocol.ts";
 
 export type Kind = "note" | "pdf" | "canvas" | "image" | "audio" | "video";
+export type Modality = "text" | "image" | "audio" | "none";
 
-/** Where a piece is: a note's lines, a PDF's page, a canvas card, seconds of a recording. */
+/** Where a piece is: a note's lines, a PDF's page, a canvas card, an image, seconds of a recording or video. */
 export interface Piece {
-  kind: "passage" | "page" | "card" | "name";
-  /** What the model reads (the prompt included); null: kept for keyword search only (a table of numbers). */
+  kind: "passage" | "page" | "card" | "name" | "image" | "frame" | "audio";
+  /** What the model reads as text (the prompt included); null: a picture, a sound, or keyword search only. */
   text: string | null;
+  picture?: Picture;        // what the model sees
+  sound?: Float32Array;     // what it hears (mono, 16 kHz)
   /** The words kept for keyword search, and shown. */
   body: string;
   loc: number | null;
   locEnd?: number | null;
+}
+
+export function modalityOf(piece: Piece): Modality {
+  return piece.text !== null ? "text" : piece.picture ? "image" : piece.sound ? "audio" : "none";
 }
 
 export interface Reading {
@@ -25,6 +34,11 @@ export interface Reading {
 /** What each kind's reader keeps, by version: when one changes, files read before are read again. */
 export const READERS: Record<Kind, number> = { note: 1, pdf: 1, canvas: 1, image: 1, audio: 1, video: 1 };
 
+/** The model's parts each kind needs for its content (else it's searched by name, and read once they're on). */
+export const NEEDS: Record<Kind, ("image" | "audio")[]> = {
+  note: [], pdf: [], canvas: [], image: ["image"], audio: ["audio"], video: ["image", "audio"],
+};
+
 const EXTENSIONS: Record<string, Kind> = {
   md: "note", pdf: "pdf", canvas: "canvas",
   png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image", avif: "image",
@@ -37,9 +51,6 @@ export function kindOf(path: string): Kind | null {
   const dot = path.lastIndexOf(".");
   return dot < 0 ? null : EXTENSIONS[path.slice(dot + 1).toLowerCase()] ?? null;
 }
-
-/** The kinds this version reads (the others come with the model's image and audio parts). */
-export const READ_NOW: ReadonlySet<Kind> = new Set<Kind>(["note", "pdf", "canvas"]);
 
 // Words of file names that say nothing about what's in the file (Dowse's)
 const GENERIC = new Set(("img dsc dscn pxl vid mvimg scan doc docs document documents untitled new copy file files " +

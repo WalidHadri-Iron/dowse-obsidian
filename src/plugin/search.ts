@@ -64,7 +64,7 @@ export class VaultSearch {
       const file = ids.get(segment.path);
       if (file === undefined) continue;
       if (!first.has(segment.path) && segment.body) first.set(segment.path, segment.body.slice(0, 220));
-      segments.push({ id: segment.id!, file, kind: segment.kind, modality: segment.vector ? "text" : "none",
+      segments.push({ id: segment.id!, file, kind: segment.kind, modality: segment.modality ?? (segment.vector ? "text" : "none"),
                       loc: segment.loc, locEnd: segment.locEnd, name: "", body: segment.body,
                       vector: segment.vector ? new Float16Array(segment.vector) : null });
     }
