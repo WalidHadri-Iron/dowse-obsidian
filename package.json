@@ -19,5 +19,8 @@
     "fake-indexeddb": "6.2.5",
     "obsidian": "1.14.4",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "stemmer": "2.0.1"
   }
 }
