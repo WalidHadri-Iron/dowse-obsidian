@@ -1,0 +1,21 @@
+{
+  "name": "dowse-obsidian",
+  "version": "0.1.0",
+  "description": "Find anything in your vault by what's in it: notes, PDFs, images, recordings and videos, searched by meaning, on your computer.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "check": "tsc --noEmit",
+    "measure": "node scripts/measure-model.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@huggingface/transformers": "4.3.1",
+    "@types/node": "22.19.1",
+    "esbuild": "0.25.12",
+    "obsidian": "1.14.4",
+    "typescript": "5.9.3"
+  }
+}

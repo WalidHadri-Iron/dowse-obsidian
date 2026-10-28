@@ -1,0 +1,66 @@
+// Builds main.js, the one file Obsidian loads: the plugin, with its engine's worker and the ONNX runtime's WebAssembly
+// inside it. Nothing that runs is fetched at run time (Obsidian's plugin policy); only the model's weights are
+// downloaded, once.
+//
+//   node esbuild.config.mjs [production] [measure]
+//
+// `measure` adds the reference measurement (src/dev): Dowse's reference inputs and vectors, checked inside Obsidian.
+
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { gzipSync } from "node:zlib";
+import { builtinModules } from "node:module";
+import esbuild from "esbuild";
+
+const production = process.argv.includes("production");
+const measure = process.argv.includes("measure");
+
+// The ONNX runtime transformers.js was built against (its own copy if it has one): its WebAssembly and the script
+// that loads it, the build transformers.js asks for (asyncify: WebGPU and the processor in one)
+const transformers = join("node_modules", "@huggingface", "transformers");
+const ort = [join(transformers, "node_modules", "onnxruntime-web", "dist"), join("node_modules", "onnxruntime-web", "dist")]
+  .find((folder) => existsSync(join(folder, "ort-wasm-simd-threaded.asyncify.wasm")));
+const wasm = gzipSync(readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.wasm")), { level: 9 }).toString("base64");
+const glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf8");
+
+const worker = await esbuild.build({
+  entryPoints: ["src/engine/worker.ts"],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  minify: production,
+  write: false,
+  logLevel: "warning",
+});
+
+const inlined = {
+  name: "inlined",
+  setup(build) {
+    const sources = {
+      "inline:worker": worker.outputFiles[0].text,
+      "inline:ort-wasm": wasm,
+      "inline:ort-glue": glue,
+    };
+    build.onResolve({ filter: /^inline:/ }, (args) => ({ path: args.path, namespace: "inline" }));
+    build.onLoad({ filter: /.*/, namespace: "inline" }, (args) => ({
+      contents: `export default ${JSON.stringify(sources[args.path])};`, loader: "js",
+    }));
+  },
+};
+
+await esbuild.build({
+  entryPoints: ["src/main.ts"],
+  bundle: true,
+  format: "cjs",
+  platform: "browser",
+  target: "es2022",
+  external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules],
+  define: { MEASURE: JSON.stringify(measure) },
+  loader: { ".png": "base64", ".f32": "base64" },
+  plugins: [inlined],
+  minify: production,
+  sourcemap: production ? false : "inline",
+  outfile: "main.js",
+  logLevel: "info",
+});

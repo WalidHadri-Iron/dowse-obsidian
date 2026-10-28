@@ -1,0 +1,160 @@
+{
+ "where": "Obsidian 1.14.5 (Electron 39, Chromium 142) on Windows 10; WebGPU on the AMD integrated GPU (RDNA 2) Windows gives Obsidian; WebAssembly single-threaded",
+ "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.12.7 Chrome/142.0.7444.265 Electron/39.8.3 Safari/537.36",
+ "results": [
+  {
+   "dtype": "q4",
+   "asked": "auto",
+   "device": "webgpu",
+   "gpu": null,
+   "loaded_s": 6.070400000035763,
+   "agreement": {
+    "document": 0.9854261575866493,
+    "document-long": 0.9805703988950668,
+    "frame-70": 0.9895392472514691,
+    "landscape-140": 0.9858549559205887,
+    "query": 0.9907742290889722,
+    "query-bn": 0.9926034076177241,
+    "query-fr": 0.99320867423062,
+    "screen-280": 0.9769108710449991,
+    "speech": 0.9877124311307587
+   },
+   "seconds": {
+    "query": 0.4486999999880791,
+    "query-fr": 0.0895,
+    "query-bn": 0.19019999998807907,
+    "document": 0.07910000002384186,
+    "document-long": 8.48880000001192,
+    "screen-280": 9.9815,
+    "landscape-140": 4.181800000011921,
+    "frame-70": 1.907199999988079,
+    "speech": 2.261300000011921
+   },
+   "again": {
+    "query": 0.08619999998807908,
+    "query-fr": 0.04989999997615814,
+    "query-bn": 0.05010000002384186,
+    "document": 0.07769999998807907,
+    "document-long": 8.364100000023841
+   }
+  },
+  {
+   "dtype": "q4f16",
+   "asked": "auto",
+   "device": "webgpu",
+   "gpu": null,
+   "loaded_s": 6.566699999988079,
+   "agreement": {
+    "document": 0.9852997021118227,
+    "document-long": 0.9805262942007473,
+    "frame-70": 0.9899737829096333,
+    "landscape-140": 0.9859599238978876,
+    "query": 0.9908336428298026,
+    "query-bn": 0.9925944257038403,
+    "query-fr": 0.9932605586349641,
+    "screen-280": 0.9770425911323479,
+    "speech": 0.987850482398347
+   },
+   "seconds": {
+    "query": 0.5581999999880791,
+    "query-fr": 0.10810000002384186,
+    "query-bn": 0.23910000002384185,
+    "document": 0.077,
+    "document-long": 5.992599999964237,
+    "screen-280": 8.347400000035762,
+    "landscape-140": 3.238299999952316,
+    "frame-70": 1.5014000000357628,
+    "speech": 1.7483000000119209
+   },
+   "again": {
+    "query": 0.076,
+    "query-fr": 0.072,
+    "query-bn": 0.06890000003576278,
+    "document": 0.07539999997615814,
+    "document-long": 5.895100000023842
+   }
+  },
+  {
+   "dtype": "fp16",
+   "asked": "auto",
+   "device": "webgpu",
+   "gpu": null,
+   "loaded_s": 19.136599999964236,
+   "agreement": {
+    "document": 0.9998778828185724,
+    "document-long": 0.9998156945252175,
+    "frame-70": 0.9997983958295439,
+    "landscape-140": 0.9997129133838558,
+    "query": 0.9999399633727077,
+    "query-bn": 0.9999473644926259,
+    "query-fr": 0.9999553867741104,
+    "screen-280": 0.9996389225227278,
+    "speech": 0.9993425586261527
+   },
+   "seconds": {
+    "query": 0.3986000000238419,
+    "query-fr": 0.11519999998807907,
+    "query-bn": 0.225,
+    "document": 0.09530000001192093,
+    "document-long": 6.5286999999880795,
+    "screen-280": 8.953099999964238,
+    "landscape-140": 3.588300000011921,
+    "frame-70": 1.6806999999880792,
+    "speech": 1.833399999976158
+   },
+   "again": {
+    "query": 0.08920000004768372,
+    "query-fr": 0.088,
+    "query-bn": 0.08689999997615815,
+    "document": 0.09210000002384186,
+    "document-long": 6.3505999999642375
+   }
+  },
+  {
+   "dtype": "quantized",
+   "asked": "wasm",
+   "error": "Can't create a session. ERROR_CODE: 9, ERROR_MESSAGE: Could not find an implementation for GatherBlockQuantized(1) node with name 'node_embedding_Quant'"
+  },
+  {
+   "dtype": "q4",
+   "asked": "wasm",
+   "error": "Can't create a session. ERROR_CODE: 9, ERROR_MESSAGE: Could not find an implementation for GatherBlockQuantized(1) node with name '/model/embed_tokens/Gather_Quant'"
+  },
+  {
+   "dtype": "fp16",
+   "asked": "wasm",
+   "device": "wasm",
+   "gpu": null,
+   "loaded_s": 6.485600000023842,
+   "agreement": {
+    "document": 0.9999145220043646,
+    "document-long": 0.9998828279876671,
+    "frame-70": 0.9998478259300988,
+    "landscape-140": 0.9998309616824442,
+    "query": 0.9999553992444423,
+    "query-bn": 0.9999619897854721,
+    "query-fr": 0.9999684705502119,
+    "screen-280": 0.9997156983803361,
+    "speech": 0.9993580523318908
+   },
+   "seconds": {
+    "query": 0.1275,
+    "query-fr": 0.11909999996423722,
+    "query-bn": 0.1,
+    "document": 0.24430000001192093,
+    "document-long": 23.745100000023843,
+    "screen-280": 32.35070000004768,
+    "landscape-140": 13.325699999988078,
+    "frame-70": 6.220400000035763,
+    "speech": 4.600099999964237
+   },
+   "again": {
+    "query": 0.10670000004768372,
+    "query-fr": 0.11439999997615814,
+    "query-bn": 0.09889999997615814,
+    "document": 0.24910000002384186,
+    "document-long": 23.29419999998808
+   }
+  }
+ ]
+}
