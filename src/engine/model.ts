@@ -23,7 +23,10 @@ export class Model {
   device: string | null = null;   // where the model runs: "webgpu" or "wasm" (the processor)
   gpu: string | null = null;      // which graphics card, when it's the GPU
 
-  constructor(private onProgress: (file: string, loaded: number, total: number) => void = () => {}) {
+  private onProgress: (file: string, loaded: number, total: number) => void;
+
+  constructor(onProgress: (file: string, loaded: number, total: number) => void = () => {}) {
+    this.onProgress = onProgress;
     this.url = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
     this.worker = new Worker(this.url, { type: "module" });
     this.worker.onmessage = (event: MessageEvent<Answer>) => this.answer(event.data);
