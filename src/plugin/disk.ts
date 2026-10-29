@@ -24,10 +24,10 @@ export async function modelBytes(): Promise<number> {
   return (await modelSizes("fp16")).total;
 }
 
-/** The model's files on this computer: all of them, and those of other builds than `dtype` (the one Dowse uses:
- * another may have been downloaded by an earlier version, or for a measurement). */
-export async function modelSizes(dtype: string): Promise<{ total: number; others: number }> {
-  let total = 0, others = 0;
+/** The model's files on this computer: all of them; those of the build Dowse uses (`dtype`) by part (text, pictures,
+ * sound: each a download of its own); and those of other builds (an earlier version's, or a measurement's). */
+export async function modelSizes(dtype: string): Promise<{ total: number; others: number; text: number; pictures: number; sound: number }> {
+  let total = 0, others = 0, text = 0, pictures = 0, sound = 0;
   await each(async (cache, request) => {
     const response = await cache.match(request);
     const length = Number(response?.headers.get("content-length"));
@@ -35,8 +35,11 @@ export async function modelSizes(dtype: string): Promise<{ total: number; others
     total += bytes;
     const file = request.url.split("/").pop() ?? "";
     if (/\.onnx(_data)?$/.test(file) && !file.includes(`_${dtype}.`)) others += bytes;
+    else if (file.startsWith("vision_encoder")) pictures += bytes;
+    else if (file.startsWith("audio_encoder")) sound += bytes;
+    else text += bytes;   // (the text model, and the tokenizer and configs every part uses)
   });
-  return { total, others };
+  return { total, others, text, pictures, sound };
 }
 
 /** Removes the model's files from this computer (only the model's: not other plugins' caches); answers the bytes. */

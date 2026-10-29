@@ -42,6 +42,7 @@
     ondragout?: (index: number, event: DragEvent) => void;
   } = $props();
   let picked = -1;      // the case last clicked
+  const helpId = `dowse-wall-help-${Math.random().toString(36).slice(2, 8)}`;   // (one per wall: two tabs, two walls)
   let linking = -1;     // a drag begun on the picked case: the browser's own (into a note), not moving the wall
 
   let host: HTMLDivElement;
@@ -719,7 +720,7 @@
   </div>
 <!-- The interactive canvas needs its own focus target for gallery shortcuts. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<div class="wall" bind:this={host} role="region" aria-label="Search gallery" aria-describedby="gallery-zoom-help" tabindex="0"
+<div class="wall" bind:this={host} role="region" aria-label="Search gallery" aria-describedby={helpId} tabindex="0"
      title={hovered >= 0 ? pieces[hovered]?.name : undefined}
      onpointermove={onPointerMove} onpointerdown={onPointerDown} onpointerup={onPointerUp}
      onpointercancel={() => { dragging = null; if (linking < 0) host.draggable = false; }} onkeydown={onKeyDown}
@@ -731,7 +732,7 @@
        const index = hit(event); if (index >= 0) onopen(index);
      }}>
   <div class="tags" bind:this={tagLayer} aria-hidden="true"></div>
-  <span id="gallery-zoom-help" class="visually-hidden">Scroll to zoom toward the pointer, up to 800% for large collections. Drag to move, or Shift+scroll to move horizontally. Use + and - to zoom, and 0 to reset when the gallery is focused.</span>
+  <span id={helpId} class="visually-hidden">Scroll to zoom toward the pointer, up to 800% for large collections. Drag to move, or Shift+scroll to move horizontally. Use + and - to zoom, and 0 to reset when the gallery is focused.</span>
   <div class="zoom-controls" role="group" aria-label="Gallery zoom">
     <button onclick={() => setZoom(zoom / 1.2)} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out" title="Zoom out (−)">
       <Icon name="remove" size={18} />
@@ -762,7 +763,7 @@
   .relevance-key .match::before { background: var(--search-match); }
   .relevance-key .closest::before { background: var(--ink-3); }
   .relevance-key .other::before { background: var(--search-other); }
-  .relevance-key .match { color: var(--search-match-ink); }
+  .relevance-key .match { color: var(--ink); }   /* (the swatch carries the colour; the words, full contrast) */
   .relevance-key .other { color: var(--search-other-ink); }
   .relevance-key .size-note::before { display: none; }
   .relevance-key .navigation::before { display: none; }

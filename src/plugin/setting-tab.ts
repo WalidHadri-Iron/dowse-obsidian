@@ -104,10 +104,12 @@ export class DowseSettingTab extends PluginSettingTab {
     this.indexEl?.setDesc(!disk ? "Measured once reading is done." :
       `${disk.files.toLocaleString()} files, ${disk.passages.toLocaleString()} passages: about ${sizeText(disk.bytes)}, ` +
       `in Obsidian's own storage on this computer (not in the vault, so it isn't synced).`);
-    const others = disk?.modelOthers ? `: ${sizeText(disk.model - disk.modelOthers)} the model Dowse uses, ` +
-      `${sizeText(disk.modelOthers)} other builds of it` : "";
+    // By part (the text part is the 542 MB the first screen spoke of; pictures and sound are downloaded when turned on)
+    const parts = disk ? [["text", disk.modelParts.text], ["pictures", disk.modelParts.pictures],
+                          ["sound", disk.modelParts.sound], ["other builds of it", disk.modelOthers]]
+      .filter(([, bytes]) => (bytes as number) > 0).map(([name, bytes]) => `${name} ${sizeText(bytes as number)}`).join(" · ") : "";
     this.modelEl?.setDesc(!disk ? "Measured once reading is done." : !disk.model ? "Not downloaded on this computer."
-      : `${sizeText(disk.model)} in Obsidian's cache${others}, for all your vaults. It stays there if you remove the ` +
+      : `${sizeText(disk.model)} in Obsidian's cache, for all your vaults (${parts}). It stays there if you remove the ` +
         "plugin: to remove it, turn Dowse off for this vault (below), then remove it there.");
   }
 

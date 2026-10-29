@@ -41,6 +41,7 @@ export interface Disk {
   bytes: number;
   model: number;         // the model's files, all builds
   modelOthers: number;   // of them, other builds than the one used
+  modelParts: { text: number; pictures: number; sound: number };   // the one used, by part
 }
 
 export class Engine {
@@ -100,8 +101,10 @@ export class Engine {
   measure(): Promise<void> {
     this.measuring ??= (async () => {
       try {
-        const [index, model] = await Promise.all([this.store.size(), modelSizes(DTYPE).catch(() => ({ total: 0, others: 0 }))]);
-        this.disk = { ...index, model: model.total, modelOthers: model.others };
+        const none = { total: 0, others: 0, text: 0, pictures: 0, sound: 0 };
+        const [index, model] = await Promise.all([this.store.size(), modelSizes(DTYPE).catch(() => none)]);
+        this.disk = { ...index, model: model.total, modelOthers: model.others,
+                      modelParts: { text: model.text, pictures: model.pictures, sound: model.sound } };
         this.changed();
       } finally {
         this.measuring = null;

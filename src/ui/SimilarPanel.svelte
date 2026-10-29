@@ -5,6 +5,7 @@
   import { onMount } from "svelte";
   import Icon from "./wall/Icon.svelte";
   import ResultList from "./ResultList.svelte";
+  import { radios } from "./radios.ts";
   import { shownOf, titleOf, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
 
@@ -76,11 +77,11 @@
 
 <div class="dowse-similar">
   {#if path && found.length}
-    <div class="dowse-similar-head">Like <b>{titleOf({ path, kind: "note", loc: null, locEnd: null, excerpt: null, info: {} })}</b></div>
-    <div class="dowse-similar-filter" role="radiogroup" aria-label="Which to show">
-      <button class="dowse-chip" class:is-active={!unlinkedOnly} role="radio" aria-checked={!unlinkedOnly}
+    <div class="dowse-similar-head">Similar to <b>{controller.title(path)}</b></div>
+    <div class="dowse-similar-filter" role="radiogroup" use:radios aria-label="Which to show">
+      <button class="dowse-chip" class:is-active={!unlinkedOnly} role="radio" aria-checked={!unlinkedOnly} tabindex={(!unlinkedOnly) ? 0 : -1}
               onclick={() => setUnlinked(false)}>All</button>
-      <button class="dowse-chip" class:is-active={unlinkedOnly} role="radio" aria-checked={unlinkedOnly}
+      <button class="dowse-chip" class:is-active={unlinkedOnly} role="radio" aria-checked={unlinkedOnly} tabindex={(unlinkedOnly) ? 0 : -1}
               onclick={() => setUnlinked(true)}>Not linked yet</button>
     </div>
   {/if}

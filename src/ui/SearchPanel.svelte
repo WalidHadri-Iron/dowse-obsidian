@@ -16,6 +16,7 @@
   import type { Answer } from "../plugin/search.ts";
   import { heldText, modelTrouble, timeLeft } from "../plugin/status.ts";
   import { dragLink } from "./drag.ts";
+  import { radios } from "./radios.ts";
 
   let { controller, initial = "" }: { controller: Controller; initial?: string } = $props();
 
@@ -29,7 +30,8 @@
   let query = $state(initial);   // (the tab's first query: read once)
   let kind = $state("all");
   const LAYOUTS = ["wall", "list", "map"];
-  let layout = $state(LAYOUTS.includes(stored("dowse-layout", "wall")) ? stored("dowse-layout", "wall") : "wall");
+  // The list first (it reads at any size); the wall and the map a click away, and remembered once chosen
+  let layout = $state(LAYOUTS.includes(stored("dowse-layout", "list")) ? stored("dowse-layout", "list") : "list");
   let answer = $state<Answer | null>(null);
   let recent = $state<Shown[]>([]);
   let selected = $state(0);
@@ -90,6 +92,8 @@
   const found = $derived(searching && answer && !busy ? new Map(ranked.map((h, i) => [h.path, i])) : null);
   const scores = $derived(found ? new Map(ranked.map((h) => [h.path, h.score ?? 0])) : null);
   const matches = $derived(new Set(hits.slice(0, answer?.strong ?? 0).map((h) => h.path)));
+  // The numbered ones (the matches, or the first five when nothing clearly matches), at most five, named beside the floor
+  const rail = $derived(ranked.slice(0, Math.min(5, clear ? matches.size : 5)));
 
   // Reading a lot (the first time, or images turned on): how far, how long is left, and pausing it
   const strip = $derived.by(() => {
@@ -149,7 +153,10 @@
     busy = true;
     try {
       const found = await controller.search(query, kinds);
-      if (mine === asked) { answer = found; selected = 0; more = false; }
+      if (mine === asked) {
+        answer = found; selected = 0; more = false;
+        if (layout === "map") chosen = ranked[0]?.path ?? null;   // the first result named on the floor at once
+      }
     } finally {
       if (mine === asked) busy = false;
     }
@@ -265,19 +272,19 @@
                  role="combobox" aria-autocomplete="list" aria-expanded={searching && hits.length > 0}
                  aria-controls={listId} aria-activedescendant={current} />
         </div>
-        <div class="dowse-layout" role="radiogroup" aria-label="Show results as">
+        <div class="dowse-layout" role="radiogroup" use:radios aria-label="Show results as">
           <button class="clickable-icon" class:is-active={layout === "wall"} aria-label="As a wall" role="radio"
-                  aria-checked={layout === "wall"} onclick={() => setLayout("wall")}><Icon name="wall" size={16} /></button>
+                  aria-checked={layout === "wall"} tabindex={(layout === "wall") ? 0 : -1} onclick={() => setLayout("wall")}><Icon name="wall" size={16} /></button>
           <button class="clickable-icon" class:is-active={layout === "list"} aria-label="As a list" role="radio"
-                  aria-checked={layout === "list"} onclick={() => setLayout("list")}><Icon name="list" size={16} /></button>
+                  aria-checked={layout === "list"} tabindex={(layout === "list") ? 0 : -1} onclick={() => setLayout("list")}><Icon name="list" size={16} /></button>
           <button class="clickable-icon" class:is-active={layout === "map"} aria-label="Explore: the whole vault, by what's in it"
-                  role="radio" aria-checked={layout === "map"} onclick={() => setLayout("map")}><Icon name="map" size={16} /></button>
+                  role="radio" aria-checked={layout === "map"} tabindex={(layout === "map") ? 0 : -1} onclick={() => setLayout("map")}><Icon name="map" size={16} /></button>
         </div>
       </div>
       <div class="dowse-bar">
-        <div class="dowse-kinds" role="radiogroup" aria-label="Kinds of files">
+        <div class="dowse-kinds" role="radiogroup" use:radios aria-label="Kinds of files">
           {#each kindsHere as [id, label]}
-            <button class="dowse-chip" class:is-active={kind === id} role="radio" aria-checked={kind === id}
+            <button class="dowse-chip" class:is-active={kind === id} role="radio" aria-checked={kind === id} tabindex={(kind === id) ? 0 : -1}
                     onclick={() => { kind = id; void run(); }}>{label}</button>
           {/each}
         </div>
@@ -301,7 +308,7 @@
       <ul class="dowse-unseen" role="listbox" id={listId} aria-label="Results">
         {#each hits as hit, i (hit.path + ":" + hit.loc)}
           <li role="option" id={`${listId}-${i}`} aria-selected={`${listId}-${i}` === current}>
-            {answer && answer.strong > 0 && i >= answer.strong ? "Not as close: " : ""}{titleOf(hit)}, {lineOf(hit)}
+            {answer && answer.strong > 0 && i >= answer.strong ? "Close: " : ""}{titleOf(hit)}, {lineOf(hit)}
           </li>
         {/each}
       </ul>
@@ -318,6 +325,17 @@
                     ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)}
                     onstep={(step) => { const path = rankedStep(ranked.map((h) => h.path), chosen, step);
                                         if (path) { chosen = path; floor?.focusResult(path); } }} />
+          {#if searching && answer && rail.length}
+            <!-- The floor's numbers, named: the first few results, as the badges number them -->
+            <ol class="dowse-rail" aria-label="Results on the floor">
+              {#each rail as hit, i (hit.path)}
+                <li><button class:is-on={chosen === hit.path} tabindex="-1"
+                            onclick={() => { chosen = hit.path; floor?.focusResult(hit.path); }}>
+                  <span class="dowse-rail-rank">{i + 1}</span><span class="dowse-rail-title">{titleOf(hit)}</span>
+                </button></li>
+              {/each}
+            </ol>
+          {/if}
         {:else if map}
           <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
         {/if}

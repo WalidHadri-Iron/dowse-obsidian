@@ -111,7 +111,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   renderSuggestion(item: Shown, el: HTMLElement): void {
     el.addClass("dowse-suggestion");
     if (this.onlyClose.has(item)) el.addClass("is-close");
-    if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Not as close" });
+    if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Close" });
     el.createDiv({ cls: "dowse-result-title", text: titleOf(item) });
     el.createDiv({ cls: "dowse-result-line", text: lineOf(item) });
     if (item.excerpt) {

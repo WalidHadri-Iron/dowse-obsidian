@@ -48,7 +48,7 @@
 
 <div class="dowse-results" class:compact bind:this={list} role="listbox" aria-label="Results" {id}>
   {#each items as item, index (item.path + ":" + item.loc)}
-    {#if close(index) && index === strong}<div class="dowse-results-divider" aria-hidden="true">Not as close</div>{/if}
+    {#if close(index) && index === strong}<div class="dowse-results-divider" aria-hidden="true">Close</div>{/if}
     <div class="dowse-result" class:is-selected={index === selected} class:is-close={close(index)} data-index={index}
          role="option" aria-selected={index === selected} tabindex={index === tabbable ? 0 : -1}
          id={id ? `${id}-${index}` : undefined} draggable="true" ondragstart={(e) => drag(e, item)}
@@ -59,7 +59,7 @@
          onkeydown={(e) => { if (e.key === "Enter") controller.open(item, e.ctrlKey || e.metaKey); else step(e, index); }}>
       <span class="dowse-result-icon"><Icon name={KIND_ICON[item.kind] ?? "file"} size={16} /></span>
       <div class="dowse-result-text">
-        <div class="dowse-result-title">{#if close(index)}<span class="dowse-unseen">Not as close: </span>{/if}{titleOf(item)}</div>
+        <div class="dowse-result-title">{#if close(index)}<span class="dowse-unseen">Close: </span>{/if}{titleOf(item)}</div>
         <div class="dowse-result-line">{lineOf(item)}</div>
         {#if item.excerpt && !compact}
           <div class="dowse-result-excerpt">
@@ -72,5 +72,5 @@
   {/each}
 </div>
 {#if more && onmore}
-  <button class="dowse-more" onclick={onmore}>Show {more} more that {more === 1 ? "is" : "are"} only close</button>
+  <button class="dowse-more" onclick={onmore}>Show {more} more close</button>
 {/if}

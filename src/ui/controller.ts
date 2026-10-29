@@ -46,6 +46,8 @@ export interface Controller {
   retry(): void;
   /** Told when what the views show (the latest files, the map) was made again; returns how to stop. */
   follow(listener: () => void): () => void;
+  /** A file's title as the views give it: a note's frontmatter title or first heading, else its name. */
+  title(path: string): string;
   /** The notes `path` links to and those linking to it. */
   linked(path: string): Set<string>;
   /** A link to `target` written into the note `into` (at its cursor if it's being edited, else at its end). */

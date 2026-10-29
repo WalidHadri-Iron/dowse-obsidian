@@ -36,8 +36,14 @@ export default class DowsePlugin extends Plugin {
     this.settings = { ...DEFAULTS, ...(await this.loadData()) };
     this.statusBar = this.addStatusBarItem();
     this.statusBar.addClass("dowse-status");
-    this.statusBar.onClickEvent((event) => this.statusMenu(event));
-    this.statusBar.setAttr("aria-label", "Dowse: its menu");
+    this.statusBar.onClickEvent((event) => this.statusMenu({ x: event.clientX, y: event.clientY }));
+    this.statusBar.setAttrs({ "aria-label": "Dowse menu", role: "button", tabindex: "0", "aria-haspopup": "menu" });
+    this.registerDomEvent(this.statusBar, "keydown", (event) => {   // (by keyboard too: Enter or Space)
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      const rect = this.statusBar.getBoundingClientRect();
+      this.statusMenu({ x: rect.left, y: rect.top });
+    });
     this.power = new Power(() => { this.engine?.indexer.resume(); this.showStatus(); this.notify(); });
     this.addSettingTab(new DowseSettingTab(this.app, this));
     this.registerDomEvent(document, "keydown", () => (this.lastKey = Date.now()), { capture: true });
@@ -104,7 +110,7 @@ export default class DowsePlugin extends Plugin {
   }
 
   /** The status bar's menu: pause or resume, try the model again, the Dowse tab, the settings. */
-  private statusMenu(event: MouseEvent): void {
+  private statusMenu(at: { x: number; y: number }): void {
     const menu = new Menu();
     const engine = this.engine;
     if (engine && (engine.model.state === "failed" || engine.status.held === "the model couldn't start")) {
@@ -117,7 +123,7 @@ export default class DowsePlugin extends Plugin {
     menu.addItem((item) => item.setTitle("Open Dowse").setIcon(ICON).onClick(() => void this.openSearch()));
     if (engine) menu.addItem((item) => item.setTitle("Like this note").setIcon("sparkles").onClick(() => void this.openSimilar()));
     menu.addItem((item) => item.setTitle("Dowse settings").setIcon("settings").onClick(() => this.openSettings()));
-    menu.showAtMouseEvent(event);
+    menu.showAtPosition(at);
   }
 
   /** Reading as the views show it. */
@@ -199,6 +205,12 @@ export default class DowsePlugin extends Plugin {
       retry: () => this.engine?.retry(),
       follow: (listener) => { this.followers.add(listener); return () => this.followers.delete(listener); },
       linked: (path) => this.linked(path),
+      title: (path) => {
+        const cache = this.app.metadataCache.getCache(path);
+        const title = cache?.frontmatter?.title;
+        return typeof title === "string" && title.trim() ? title
+          : cache?.headings?.[0]?.heading ?? path.split("/").pop()!.replace(/\.[^.]+$/, "");
+      },
       insertLink: (into, target) => this.insertLink(into, target),
       dark: () => document.body.hasClass("theme-dark"),
       subscribe: (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); },

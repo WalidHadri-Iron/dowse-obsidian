@@ -681,7 +681,6 @@
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
       {#if clear && found.size > (matches?.size ?? 0)}<span class="closest">Close</span>{/if}
       <span class="other">Other files</span>
-      {#if found.size && clear}<span class="size-note">Larger = stronger match</span>{/if}
       {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>
   {:else}
@@ -709,7 +708,7 @@
                    font-size: var(--text-xs); pointer-events: none; }
   .relevance-key span { display: flex; align-items: center; gap: var(--s-2); }
   .relevance-key span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }
-  .relevance-key .match { color: var(--search-match-ink); }
+  .relevance-key .match { color: var(--ink); }   /* (the swatch carries the colour; the words, full contrast) */
   .relevance-key .closest { color: var(--ink-2); }
   .relevance-key .other { color: var(--search-other-ink); }
   .relevance-key .match::before { background: var(--search-match); }
