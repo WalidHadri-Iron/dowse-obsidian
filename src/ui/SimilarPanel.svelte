@@ -21,14 +21,13 @@
   let more = $state(false);
   let asked = 0;
 
-  // The clearly alike first, then the first few only close, the rest when asked (as the Dowse tab's list)
-  const CLOSE_SHOWN = 5;
+  // The clearly alike, the less likely folded into one row (opened when asked), as the Dowse tab's list
   const filtered = $derived(unlinkedOnly ? found.filter((item) => !linked.has(item.path)) : found);
   const strong = $derived.by(() => {
     const clear = new Set(found.slice(0, strongCount).map((item) => item.path));
     return filtered.filter((item) => clear.has(item.path)).length;
   });
-  const items = $derived(more ? filtered : filtered.slice(0, strong > 0 ? strong + CLOSE_SHOWN : 10));
+  const items = $derived(more ? filtered : filtered.slice(0, strong > 0 ? strong : 10));
 
   async function refresh(): Promise<void> {
     const mine = ++asked;

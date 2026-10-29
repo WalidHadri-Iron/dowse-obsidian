@@ -679,7 +679,7 @@
       {#if !found.size}<span class="size-note">No results here</span>
       {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
-      {#if clear && found.size > (matches?.size ?? 0)}<span class="closest">Close</span>{/if}
+      {#if clear && found.size > (matches?.size ?? 0)}<span class="closest">Less likely</span>{/if}
       <span class="other">Other files</span>
       {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>

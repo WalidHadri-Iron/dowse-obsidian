@@ -16,3 +16,9 @@ test("a note found at its start says no line", () => {
   assert.equal(lineOf({ ...note, loc: 0 }), "Note · Trips");
   assert.equal(lineOf({ ...note, loc: 4 }), "Note · line 5 · Trips");
 });
+
+test("an excerpt cut at a word, with an ellipsis", async () => {
+  const { clip } = await import("../src/plugin/search.ts");
+  assert.equal(clip("short", 220), "short");
+  assert.equal(clip("Tenancy agreement for the flat on Linden Street, signed in March", 30), "Tenancy agreement for the…");
+});

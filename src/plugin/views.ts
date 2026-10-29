@@ -102,7 +102,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   async getSuggestions(query: string): Promise<Shown[]> {
     if (!query.trim()) return this.recent;
     const answer = await this.controller.search(query, []);
-    const items = answer.hits.slice(0, answer.strong > 0 ? answer.strong + 5 : 10).map(shownOf);   // (the rest: in the tab)
+    const items = answer.hits.slice(0, answer.strong > 0 ? answer.strong + 3 : 10).map(shownOf);   // (the rest: in the tab)
     this.firstClose = answer.strong > 0 && answer.strong < items.length ? items[answer.strong] : null;
     if (answer.strong > 0) for (const item of items.slice(answer.strong)) this.onlyClose.add(item);
     return items;
@@ -111,7 +111,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   renderSuggestion(item: Shown, el: HTMLElement): void {
     el.addClass("dowse-suggestion");
     if (this.onlyClose.has(item)) el.addClass("is-close");
-    if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Close" });
+    if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Less likely" });
     el.createDiv({ cls: "dowse-result-title", text: titleOf(item) });
     el.createDiv({ cls: "dowse-result-line", text: lineOf(item) });
     if (item.excerpt) {

@@ -122,6 +122,8 @@
   }
 
   function applyFaces(): void {
+    // The cases a search pulled forward first: their faces are what's looked at
+    uploads.sort((a, b) => Number(b.vitrine.tag.dataset.layer === "foreground") - Number(a.vitrine.tag.dataset.layer === "foreground"));
     for (const { vitrine, texture } of uploads.splice(0, UPLOADS_PER_FRAME)) {
       if (vitrine.leaving || vitrines.get(vitrine.piece.key) !== vitrine) { texture.dispose(); continue; }
       vitrine.pictureMaterial.map?.dispose();
@@ -253,7 +255,9 @@
         vitrines.set(piece.key, vitrine);
       }
       vitrine.piece = piece;
-      vitrine.pixels = Math.max(vitrine.pixels, size >= 1.25 ? 900 : basePixels());
+      // A case pulled forward gets a face to read, whatever its size: on a wall of hundreds the others' are 96 pixels
+      // wide, and two matches of like strength (not enlarged) stayed blank paper until the wall was zoomed
+      vitrine.pixels = Math.max(vitrine.pixels, picked || size >= 1.25 ? 900 : basePixels());
       vitrine.tag.dataset.path = piece.path;
       vitrine.tag.dataset.rank = String(rank);
       vitrine.tag.dataset.size = size.toFixed(4);
@@ -713,7 +717,7 @@
       {#if !pieces.some((piece) => !piece.back)}<span class="closest">No results · collection shown</span>
       {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
-      {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Close</span>{/if}
+      {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Less likely</span>{/if}
       <span class="other">Other files</span>
       {#if clear && pieces.some((piece) => !piece.back)}<span class="size-note">Larger = stronger match</span>{/if}
     {:else}<span class="navigation">Scroll to zoom · drag to move{ondragout ? " · drag a selected file into a note to link it" : ""}</span>{/if}

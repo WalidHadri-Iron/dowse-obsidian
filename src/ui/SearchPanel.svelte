@@ -34,7 +34,7 @@
   let layout = $state(LAYOUTS.includes(stored("dowse-layout", "list")) ? stored("dowse-layout", "list") : "list");
   let answer = $state<Answer | null>(null);
   let recent = $state<Shown[]>([]);
-  let selected = $state(0);
+  let selected = $state(-1);   // (none until a search, or ↑/↓: a row lit before anything was done meant nothing)
   let busy = $state(false);
   // svelte-ignore state_referenced_locally
   let on = $state(controller.on());   // (the controller stays the same; these follow it by subscription)
@@ -62,10 +62,10 @@
   const kinds = $derived(KINDS.find(([id]) => id === kind)?.[2] ?? []);
   // Before a search, the vault's latest files, of the kinds chosen (the chips filter them too)
   const latest = $derived(kinds.length ? recent.filter((item) => kinds.includes(item.kind)) : recent);
-  // A search's list: its matches and the first few that are only close; the rest when asked (each is noise to most)
-  const CLOSE_SHOWN = 5;
+  // A search's list: its matches, and what's less likely folded into one row (opened when asked); with no clear match,
+  // the closest ten (they're the answer then)
   let more = $state(false);
-  const cut = $derived(!answer ? hits.length : answer.strong > 0 ? answer.strong + CLOSE_SHOWN : 10);
+  const cut = $derived(!answer ? hits.length : answer.strong > 0 ? answer.strong : 10);
   const listed = $derived(more ? hits : hits.slice(0, cut));
   const shown: Shown[] = $derived(searching ? (layout === "list" ? listed : hits) : latest);
 
@@ -138,7 +138,7 @@
         `grouped by what's in them${named || !map.aisles.length ? "" : " (named once the model has started)"}` +
         (strip ? "" : ` · ${status}`);
     }
-    if (!searching) return strip ? "" : cap(status);
+    if (!searching) return strip ? "" : `Recent files · ${status}`;   // (what the rows are, and how reading is)
     if (busy && !answer) return "Searching…";
     if (!answer) return "";
     const matches = answer.strong;
@@ -149,7 +149,7 @@
 
   async function run(): Promise<void> {
     const mine = ++asked;
-    if (!query.trim()) { answer = null; busy = false; return; }
+    if (!query.trim()) { answer = null; busy = false; selected = -1; return; }
     busy = true;
     try {
       const found = await controller.search(query, kinds);
@@ -214,7 +214,7 @@
     if (event.key === "ArrowDown") { selected = Math.min(selected + 1, items.length - 1); event.preventDefault(); }
     else if (event.key === "ArrowUp") { selected = Math.max(selected - 1, 0); event.preventDefault(); }
     else if (event.key === "Enter" && items[selected]) { controller.open(items[selected], event.ctrlKey || event.metaKey); event.preventDefault(); }
-    else if (event.key === "Escape" && query) { query = ""; answer = null; event.preventDefault(); }
+    else if (event.key === "Escape" && query) { query = ""; answer = null; selected = -1; event.preventDefault(); }
   }
 
   onMount(() => {
@@ -308,7 +308,7 @@
       <ul class="dowse-unseen" role="listbox" id={listId} aria-label="Results">
         {#each hits as hit, i (hit.path + ":" + hit.loc)}
           <li role="option" id={`${listId}-${i}`} aria-selected={`${listId}-${i}` === current}>
-            {answer && answer.strong > 0 && i >= answer.strong ? "Close: " : ""}{titleOf(hit)}, {lineOf(hit)}
+            {answer && answer.strong > 0 && i >= answer.strong ? "Less likely: " : ""}{titleOf(hit)}, {lineOf(hit)}
           </li>
         {/each}
       </ul>

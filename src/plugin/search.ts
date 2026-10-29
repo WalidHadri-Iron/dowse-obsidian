@@ -25,6 +25,14 @@ export interface Answer {
   ms: number;
 }
 
+/** `text` cut to at most `length` characters at a word, "…" after it (not mid-word). */
+export function clip(text: string, length: number): string {
+  if (text.length <= length) return text;
+  const cut = text.slice(0, length);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > length * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.–-]+$/, "")}…`;
+}
+
 /** A file's name entry: its name, its last three folders, and a note's tags and aliases. */
 export function nameWords(path: string, info: Record<string, unknown>): string {
   const parts = path.split("/");
@@ -121,7 +129,7 @@ export class VaultSearch {
       const file = ids.get(segment.path);
       if (file === undefined) continue;
       if (segment.vector) mapped.get(segment.path)!.vectors.push({ modality: segment.modality, vector: new Float16Array(segment.vector) });
-      if (!first.has(segment.path) && segment.body) first.set(segment.path, segment.body.slice(0, 220));
+      if (!first.has(segment.path) && segment.body) first.set(segment.path, clip(segment.body, 220));
       segments.push({ id: segment.id!, file, kind: segment.kind, modality: segment.modality ?? (segment.vector ? "text" : "none"),
                       loc: segment.loc, locEnd: segment.locEnd, name: "", body: segment.body,
                       vector: segment.vector ? new Float16Array(segment.vector) : null });
