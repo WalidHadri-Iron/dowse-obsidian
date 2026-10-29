@@ -1,13 +1,15 @@
 // Settings › Dowse: turning it on for this vault (what that downloads, said first), and once on, where the model runs,
 // how far reading is, and what's turned off.
 
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
 import { DTYPE } from "./engine.ts";
 import { isOn, plainExclusions } from "./settings.ts";
 import { kindOf } from "../engine/reading/types.ts";
+import { prefer, preferred, situation } from "./graphics.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
+const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
 
 export class DowseSettingTab extends PluginSettingTab {
   private plugin: DowsePlugin;
@@ -59,7 +61,8 @@ export class DowseSettingTab extends PluginSettingTab {
     const where = model.state !== "ready" ? { asleep: "asleep (it wakes when there's something to read)",
       downloading: `downloading, ${Math.round((model.progress ?? 0) * 100)}%`, loading: "starting",
       failed: `couldn't start: ${model.error}`, ready: "" }[model.state]
-      : model.device === "webgpu" ? "on the graphics card (WebGPU)" : "on the processor (no WebGPU here: slower)";
+      : model.device === "webgpu" ? `on the graphics card (WebGPU${model.gpu ? `: ${model.gpu}` : ""})`
+      : "on the processor (no WebGPU here: slower)";
     const reading = status.state === "idle" ? "Up to date" : status.state === "waiting" ? "Waiting while you type"
       : `Reading ${Math.min(status.done + 1, status.total)} of ${status.total}`;
     this.statusEl.setText(`Model: ${where}. ${reading}.` + (status.failed ? ` ${status.failed} couldn't be read.` : ""));
@@ -68,6 +71,8 @@ export class DowseSettingTab extends PluginSettingTab {
   private onView(el: HTMLElement): void {
     this.statusEl = el.createEl("p", { cls: "dowse-settings-status" });
     this.refreshStatus();
+
+    this.graphics(el.createDiv());
 
     el.createEl("h3", { text: "Pictures and sound" });
     const counts = { image: 0, audio: 0, video: 0, pdf: 0 } as Record<string, number>;
@@ -131,8 +136,28 @@ export class DowseSettingTab extends PluginSettingTab {
         this.display();
       }));
 
-    el.createEl("p", { cls: "setting-item-description", text: `On Windows, Obsidian uses the graphics card Windows ` +
-      `gives it: on a computer with two, choose the faster one for Obsidian in Settings › System › Display › ` +
-      `Graphics. (Model build: ${DTYPE}.)` });
+    el.createEl("p", { cls: "setting-item-description", text: `Model build: ${DTYPE}.` });
+  }
+
+  /** A PC with a graphics card and an integrated GPU: run Obsidian on the card (Windows' own preference for it). Only
+   * shown when there's a card to choose. */
+  private async graphics(el: HTMLElement): Promise<void> {
+    const { faster, on } = await situation(this.plugin.engine?.model.gpu);
+    if (!faster) return;
+    const chosen = await preferred();
+    const now = on === true ? `Dowse reads on it now.` : on === false ? `Dowse reads on the integrated graphics now${chosen ? ", until Obsidian starts again" : ""}.` : "";
+    new Setting(el).setName(`Run Obsidian on the ${faster}`)
+      .setDesc(`Windows gives Obsidian its integrated graphics unless told otherwise; the model reads ${SPEEDUP} faster ` +
+        `on a graphics card. ${now} This sets Windows' graphics preference for Obsidian (Settings › System › Display ` +
+        `› Graphics); it applies when Obsidian starts again.`)
+      .addToggle((toggle) => toggle.setValue(chosen).onChange(async (high) => {
+        try {
+          await prefer(high);
+          new Notice(`Quit Obsidian and open it again: it will run on ${high ? `the ${faster}` : "the graphics Windows chooses"}.`, 10000);
+        } catch (error) {
+          toggle.setValue(!high);
+          new Notice(`Windows' graphics preference couldn't be changed: ${error instanceof Error ? error.message : error}`);
+        }
+      }));
   }
 }

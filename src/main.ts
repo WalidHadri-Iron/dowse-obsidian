@@ -8,6 +8,7 @@ import { Pictures } from "./plugin/pictures.ts";
 import { DEFAULTS, isOn, turnOff, turnOn, type Settings } from "./plugin/settings.ts";
 import { DowseSettingTab } from "./plugin/setting-tab.ts";
 import { statusText } from "./plugin/status.ts";
+import { preferred, situation } from "./plugin/graphics.ts";
 import { ICON, QuickSearch, SEARCH_VIEW, SIMILAR_VIEW, SearchView, SimilarView } from "./plugin/views.ts";
 import type { Controller } from "./ui/controller.ts";
 
@@ -63,9 +64,22 @@ export default class DowsePlugin extends Plugin {
   async start(): Promise<void> {
     if (this.engine) return;
     this.engine = await Engine.open(this.app, () => this.settings, () => Date.now() - this.lastKey < TYPING_MS);
-    this.engine.onChange(() => { this.showStatus(); this.notify(); });
+    this.engine.onChange(() => { this.showStatus(); this.notify(); this.hintGraphics(); });
     this.engine.start();
     this.notify();
+  }
+
+  /** Once: the model runs on the integrated GPU while a faster card is there (Settings › Dowse can switch). */
+  private hintGraphics(): void {
+    const model = this.engine?.model;
+    if (this.settings.graphicsHinted || model?.state !== "ready" || model.device !== "webgpu") return;
+    this.settings.graphicsHinted = true;
+    void this.save();
+    void situation(model.gpu).then(async ({ faster, on }) => {
+      if (faster && on === false && !(await preferred()))
+        new Notice(`Dowse reads on the integrated graphics. Your ${faster} is much faster: Settings › Dowse can ` +
+                   `switch Obsidian to it.`, 15000);
+    });
   }
 
   private notify(): void {

@@ -21,5 +21,9 @@ Speed, on the integrated AMD GPU Windows gives Obsidian here (seconds, second ru
 the long passage 23, an image at 140 tokens 13. Searching is instant everywhere; reading a vault is what needs work
 (batching, passage length, image budgets).
 
+Reading a vault, on this PC's two GPUs (2026-10-29: 44 notes of Obsidian's help, 385 passages, model start included;
+`dev/hooks.ts` "read"): the integrated AMD GPU (WebGPU: "amd rdna-2") 94.2 s, the RTX 4070 Ti ("nvidia lovelace")
+12.4 s and 10.9 s, about 8 times faster. Settings › Dowse offers to run Obsidian on the card (`plugin/graphics.ts`).
+
 On Windows, Chromium ignores WebGPU's "high-performance" choice: Obsidian gets the GPU Windows assigns it
 (Settings › System › Display › Graphics).

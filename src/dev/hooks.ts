@@ -6,11 +6,14 @@
 //                         the index, how long reading took, where the model ran. It may ask for more:
 //                         {"searches": ["…"], "view": "a query" (the Dowse tab opened on it), "layout": "wall" | "list" | "map",
 //                          "similar": "path of a note" (the sidebar opened on it), "quick": "a query" (Quick search,
-//                          typed into), "images": true, "sound": true (the model's parts turned on first)}
+//                          typed into), "images": true, "sound": true (the model's parts turned on first),
+//                          "graphics": true | false (Windows' graphics card preference for Obsidian set, at the end),
+//                          "settings": true (Settings › Dowse opened)}
 
 import type DowsePlugin from "../main.ts";
 import { measureIfAsked } from "./measure.ts";
 import { QuickSearch } from "../plugin/views.ts";
+import { prefer, preferred, situation } from "../plugin/graphics.ts";
 
 export async function run(plugin: DowsePlugin): Promise<void> {
   const { adapter } = plugin.app.vault;
@@ -22,8 +25,9 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   if (!plugin.settings.on) await plugin.turnOn();
   const engine = plugin.engine!;
   await engine.indexer.settled();
+  const read = (performance.now() - started) / 1000;
   const asked = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as
-    { searches?: string[]; view?: string; layout?: string; similar?: string; quick?: string };
+    { searches?: string[]; view?: string; layout?: string; similar?: string; quick?: string; graphics?: boolean; settings?: boolean };
   await engine.search.search("warm up");   // the model (and the probes) ready before what's timed
   const searches = [];
   for (const query of asked.searches ?? []) {
@@ -39,6 +43,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
     await plugin.openSimilar();
   }
   if (asked.view !== undefined) await plugin.openSearch(asked.view);
+  if (asked.settings) plugin.openSettings();
   if (asked.quick !== undefined) {
     const modal = new QuickSearch(plugin.app, plugin.controller);
     modal.open();
@@ -48,9 +53,14 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 4000));   // the views draw (the wall loads its pictures)
   const files = await engine.store.files();
   const segments = await engine.store.segments();
+  const graphics = { ...(await situation(engine.model.gpu)), preferred: await preferred(), set: asked.graphics };
+  if (asked.graphics !== undefined) await prefer(asked.graphics);
   await adapter.write("dowse-dev-result.json", JSON.stringify({
     done: true,
     seconds: (performance.now() - started) / 1000,
+    read,
+    vectors: segments.filter((s) => s.vector).length,
+    graphics,
     model: engine.model,
     status: engine.status,
     searches,

@@ -69,6 +69,10 @@ while (Date.now() - started < timeout) {
   await new Promise((r) => setTimeout(r, 1000));
 }
 await page.screenshot({ path: join(shots, "final.png") }).catch(() => {});
+// Obsidian's other windows (Settings opens in its own since 1.14, a note popped out: about:blank pages the main
+// window draws into): one picture each
+const others = (await browser.pages()).filter((p) => p !== page && /^(app:\/\/obsidian\.md|about:blank)/.test(p.url()));
+for (const [i, other] of others.entries()) await other.screenshot({ path: join(shots, `window-${i}.png`) }).catch(() => {});
 console.log(existsSync(waitFor) ? readFileSync(waitFor, "utf8") : "timed out: no " + args.wait);
 browser.disconnect();
 stop();

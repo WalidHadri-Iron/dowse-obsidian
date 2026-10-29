@@ -36,7 +36,7 @@ async function load(request: Extract<Request, { op: "load" }>): Promise<{ device
   if (!request.parts.image) config.vision_config = null;
   if (!request.parts.audio) config.audio_config = null;
   model = await AutoModel.from_pretrained(MODEL, { config, device, dtype: request.dtype as any, progress_callback: progress });
-  const adapter = device === "webgpu" ? await (ort.env.webgpu as any).adapter : null;
+  const adapter = device === "webgpu" ? (await (ort.env.webgpu as any).adapter) ?? gpu : null;   // (the runtime's own, or ours)
   const info = adapter?.info;
   return { device, gpu: info ? [info.vendor, info.architecture, info.description].filter(Boolean).join(" ") : null };
 }

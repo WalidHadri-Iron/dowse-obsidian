@@ -6,9 +6,10 @@ export interface Settings {
   off: string[];               // folders and files turned off, as vault paths
   images: boolean;             // images, PDF scans and videos' frames read (the model's image part: 336 MB more)
   sound: boolean;              // recordings and videos' sound read (the model's audio part: 587 MB more)
+  graphicsHinted: boolean;     // told once that the model runs on the integrated GPU while a faster card is there
 }
 
-export const DEFAULTS: Settings = { on: false, off: [], images: false, sound: false };
+export const DEFAULTS: Settings = { on: false, off: [], images: false, sound: false, graphicsHinted: false };
 
 /** Whether `path` is searched: not under anything turned off (a folder covers what's in it). */
 export function isOn(settings: Settings, path: string): boolean {

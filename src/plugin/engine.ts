@@ -18,6 +18,7 @@ export interface ModelState {
   state: "asleep" | "downloading" | "loading" | "ready" | "failed";
   progress?: number;      // 0..1 while downloading
   device?: string;        // "webgpu" or "wasm"
+  gpu?: string | null;    // which graphics card (WebGPU's description of it: "nvidia ada-lovelace…")
   error?: string;
 }
 
@@ -119,7 +120,7 @@ export class Engine {
     try {
       const device = await model.load(DTYPE, "auto", this.parts());
       this.loaded = model;
-      this.setModel({ state: "ready", device });
+      this.setModel({ state: "ready", device, gpu: model.gpu });
       return model;
     } catch (error) {
       model.close();
