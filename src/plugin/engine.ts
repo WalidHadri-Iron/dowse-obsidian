@@ -57,7 +57,7 @@ export class Engine {
     this.search = new VaultSearch(store, {
       ready: () => { if (this.loaded) this.lastUsed = Date.now(); return this.loaded; },
       wake: () => void this.use().catch(() => {}),
-    });
+    }, (path) => isOn(settings(), path));
     this.timer = window.setInterval(() => this.sleepIfIdle(), 60 * 1000);
   }
 

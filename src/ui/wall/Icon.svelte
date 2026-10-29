@@ -5,6 +5,7 @@
     folderOpen: "folder-open", open: "external-link", copy: "copy", dismiss: "x", clock: "clock", settings: "settings",
     similar: "sparkles", expand: "maximize-2", note: "file-text", pdf: "file", image: "image", audio: "audio-lines",
     video: "film", canvas: "layout-dashboard", wall: "layout-grid", list: "list",
+    map: "map", layers: "layers",
   };
 </script>
 

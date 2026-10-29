@@ -1,6 +1,7 @@
 // What the views ask of the plugin: one interface, so the Svelte views don't reach into Obsidian or the engine.
 
 import type { Answer } from "../plugin/search.ts";
+import type { ExploreMap } from "../engine/search/explore.ts";
 import type { Piece } from "./wall/piece.ts";
 import type { Shown } from "./results.ts";
 
@@ -11,6 +12,8 @@ export interface Controller {
   search(query: string, kinds: string[]): Promise<Answer>;
   similar(path: string): Promise<Answer>;
   recent(): Promise<Shown[]>;
+  /** Explore's map of the vault (aisles of files that are alike). */
+  explore(): Promise<ExploreMap>;
   picture(piece: Piece, pixels: number, terms: string[]): Promise<string | null>;
   open(shown: Shown, newTab: boolean): void;
   /** A result dragged into a note: its link. */

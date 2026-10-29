@@ -5,7 +5,8 @@ Run with Dowse's own environment (its model and Experiments/testbed-fresh.sqlite
 
     cd <dowse> && scripts/win.sh python <this script> evals/testbed.json evals/hard.json <out dir>
 
-Writes <out dir>/index.json, segments.f16 (the vectors, in segment order) and queries.json.
+Writes <out dir>/index.json, segments.f16 (the vectors, in segment order), queries.json, and explore.json (the
+vocabulary's vectors and Dowse's Explore map of the index).
 """
 
 import base64
@@ -18,8 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-from dowse import paths, probes, runtime, searcher as searching
-from dowse.embedder import Embedder
+from dowse import explore, paths, probes, runtime, searcher as searching
+from dowse.embedder import Embedder, Prompts
 from dowse.searcher import Searcher, strong_count
 from dowse.store import Store
 
@@ -53,6 +54,13 @@ bank = probes.load(store)
 asked = getattr(searching, "for_meaning")
 with runtime.Server(runtime.load(), text_only=True) as server, Embedder(server.url, parallel=1) as embedder:
     query_vectors = {q["q"]: embedder.query(asked(q["q"], now=now)) for q in queries}
+    words = embedder.texts([Prompts.query(w) for w in explore.WORDS]).astype(np.float32)
+centred = words - words.mean(axis=0)
+snapshot = explore._build_snapshot(store, centred / np.linalg.norm(centred, axis=1, keepdims=True))
+(out / "explore.json").write_text(json.dumps({
+    "words": base64.b64encode(words.tobytes()).decode(),
+    "aisles": snapshot["aisles"], "membership": {a: [relative(p) for p in m] for a, m in snapshot["membership"].items()},
+}, ensure_ascii=False))
 dowse = Searcher(store)
 answers = []
 for query in queries:

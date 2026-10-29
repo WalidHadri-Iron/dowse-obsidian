@@ -1,12 +1,16 @@
 <script lang="ts">
   // The Dowse tab: the vault searched by what's in it. Before a search, the wall holds the vault's latest files; a
-  // search gathers clear matches in front of them (the fisheye wall) or lists them, with the words found.
+  // search gathers clear matches in front of them (the fisheye wall) or lists them, with the words found. Or the whole
+  // vault on Explore's floor, in aisles of files that are alike, where a search shows what it found where it stands.
   import { onMount } from "svelte";
   import Wall from "./wall/Wall.svelte";
   import Icon from "./wall/Icon.svelte";
   import ResultList from "./ResultList.svelte";
+  import MapFloor, { type MapAisle, type MapPiece } from "./explore/MapFloor.svelte";
+  import { rankedStep } from "./explore/explore-view.ts";
+  import type { ExploreMap } from "../engine/search/explore.ts";
   import { CLOSEST_LABEL } from "./wall/search-confidence.ts";
-  import { pieceOf, shownOf, type Shown } from "./results.ts";
+  import { folderOf, nameOf, pieceOf, shownOf, VISUAL, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
   import type { Answer } from "../plugin/search.ts";
 
@@ -21,7 +25,8 @@
   // svelte-ignore state_referenced_locally
   let query = $state(initial);   // (the tab's first query: read once)
   let kind = $state("all");
-  let layout = $state(stored("dowse-layout", "wall") === "list" ? "list" : "wall");
+  const LAYOUTS = ["wall", "list", "map"];
+  let layout = $state(LAYOUTS.includes(stored("dowse-layout", "wall")) ? stored("dowse-layout", "wall") : "wall");
   let answer = $state<Answer | null>(null);
   let recent = $state<Shown[]>([]);
   let selected = $state(0);
@@ -33,6 +38,9 @@
   // svelte-ignore state_referenced_locally
   let dark = $state(controller.dark());
   let input = $state<HTMLInputElement>();
+  let map = $state<ExploreMap | null>(null);
+  let chosen = $state<string | null>(null);   // the case picked on the floor
+  let floor = $state<MapFloor | null>(null);
   let asked = 0;
   let timer = 0;
 
@@ -51,8 +59,29 @@
     return [...found, ...rest];
   });
 
+  // The floor: the map's cases of the kinds chosen; a search shows its results where they stand
+  const mapPieces: MapPiece[] = $derived((map?.pieces ?? []).filter((p) => !kinds.length || kinds.includes(p.kind))
+    .map((p) => ({ ...p, name: nameOf(p.path), folder: folderOf(p.path) || "/", visual: VISUAL.has(p.kind) })));
+  const mapAisles: MapAisle[] = $derived.by(() => {
+    if (!kinds.length) return map?.aisles ?? [];
+    const counts = new Map<number, number>();
+    for (const p of mapPieces) counts.set(p.aisle, (counts.get(p.aisle) ?? 0) + 1);
+    return (map?.aisles ?? []).filter((a) => counts.has(a.index)).map((a) => ({ ...a, count: counts.get(a.index)! }));
+  });
+  const onFloor = $derived(new Set(mapPieces.map((p) => p.path)));
+  const ranked = $derived(hits.filter((h) => onFloor.has(h.path)));
+  const found = $derived(searching && answer && !busy ? new Map(ranked.map((h, i) => [h.path, i])) : null);
+  const scores = $derived(found ? new Map(ranked.map((h) => [h.path, h.score ?? 0])) : null);
+  const matches = $derived(new Set(hits.slice(0, answer?.strong ?? 0).map((h) => h.path)));
+
   const summary = $derived.by(() => {
     if (!on) return "";
+    if (layout === "map" && !searching) {
+      if (!map) return "Laying out the vault…";
+      const named = map.aisles.some((a) => !a.label.startsWith("Aisle "));
+      return `${map.total.toLocaleString()} files in ${map.aisles.length} aisle${map.aisles.length === 1 ? "" : "s"}, ` +
+        `grouped by what's in them${named || !map.aisles.length ? "" : " (named once the model has started)"} · ${status}`;
+    }
     if (!searching) return status;
     if (busy && !answer) return "Searching…";
     if (!answer) return "";
@@ -83,6 +112,18 @@
     if (controller.on()) recent = await controller.recent();
   }
 
+  async function loadMap(): Promise<void> {
+    if (!controller.on()) return;
+    const next = await controller.explore();
+    if (next !== map) map = next;
+  }
+
+  /** What opens for a case: the search's hit (at its line or page), else the file. */
+  function shownFor(path: string): Shown {
+    return hits.find((h) => h.path === path) ?? { path, kind: mapPieces.find((p) => p.path === path)?.kind ?? "note",
+      loc: null, locEnd: null, excerpt: null, info: {} };
+  }
+
   /** Asked from outside (a command, a link): this query, now. */
   export function ask(next: string): void {
     query = next;
@@ -91,10 +132,25 @@
 
   function setLayout(next: string): void {
     layout = next;
+    if (next === "map") void loadMap();
     try { localStorage.setItem("dowse-layout", next); } catch { /* private storage */ }
   }
 
   function keys(event: KeyboardEvent): void {
+    if (layout === "map" && found) {   // through the results where they stand
+      const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+      if (step) {
+        const path = rankedStep(ranked.map((h) => h.path), chosen, step);
+        if (path) { chosen = path; floor?.focusResult(path); }
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Enter" && (chosen ?? ranked[0]?.path)) {
+        controller.open(shownFor(chosen ?? ranked[0].path), event.ctrlKey || event.metaKey);
+        event.preventDefault();
+        return;
+      }
+    }
     const items = shown;
     if (event.key === "ArrowDown") { selected = Math.min(selected + 1, items.length - 1); event.preventDefault(); }
     else if (event.key === "ArrowUp") { selected = Math.max(selected - 1, 0); event.preventDefault(); }
@@ -105,6 +161,7 @@
   onMount(() => {
     input?.focus();
     void loadRecent();
+    if (layout === "map") void loadMap();
     if (query.trim()) void run();
     let lastReady = controller.ready();
     const stop = controller.subscribe(() => {
@@ -115,7 +172,10 @@
       if (ready && !lastReady && answer && !answer.meaning) void run();   // the model came: by meaning now
       lastReady = ready;
     });
-    const refresh = window.setInterval(() => { if (!searching) void loadRecent(); }, 10000);
+    const refresh = window.setInterval(() => {
+      if (!searching) void loadRecent();
+      if (layout === "map") void loadMap();   // remade in the background as the vault is read; the last one meanwhile
+    }, 10000);
     return () => { stop(); window.clearInterval(refresh); window.clearTimeout(timer); };
   });
 </script>
@@ -148,12 +208,28 @@
                   aria-checked={layout === "wall"} onclick={() => setLayout("wall")}><Icon name="wall" size={16} /></button>
           <button class="clickable-icon" class:is-active={layout === "list"} aria-label="As a list" role="radio"
                   aria-checked={layout === "list"} onclick={() => setLayout("list")}><Icon name="list" size={16} /></button>
+          <button class="clickable-icon" class:is-active={layout === "map"} aria-label="Explore: the whole vault, by what's in it"
+                  role="radio" aria-checked={layout === "map"} onclick={() => setLayout("map")}><Icon name="map" size={16} /></button>
+          {#if layout === "map"}
+            <button class="clickable-icon" aria-label="See the whole floor" onclick={() => floor?.overview()}><Icon name="layers" size={16} /></button>
+          {/if}
         </div>
       </div>
       <div class="dowse-summary" aria-live="polite">{summary}</div>
     </div>
-    <div class="dowse-body">
-      {#if layout === "wall" && pieces.length}
+    <div class="dowse-body" class:dowse-floor={layout === "map"}>
+      {#if layout === "map"}
+        {#if mapPieces.length}
+          <MapFloor bind:this={floor} pieces={mapPieces} aisles={mapAisles} {found} {scores} {clear} {matches} {dark}
+                    selected={chosen}
+                    picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px, [])}
+                    onselect={(piece) => (chosen = piece.path)}
+                    onopen={(piece) => controller.open(shownFor(piece.path), false)}
+                    onhover={(event, piece, target) => controller.hover(event, piece.path, target)} />
+        {:else if map}
+          <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
+        {/if}
+      {:else if layout === "wall" && pieces.length}
         <Wall {pieces} collectionKeys={recent.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
               terms={answer?.terms ?? []} {searching} {clear} {dark}
               picture={(piece, px, terms) => controller.picture(piece, px, terms)}

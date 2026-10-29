@@ -13,6 +13,7 @@
   import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
   import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   import { cardTexture, roundedPlane, roundedFrame } from "./glass.ts";
+  import { cssColor } from "./css-color.ts";
   import { softenBackground, wallRelevance } from "./search-relevance.ts";
   import { scoreSize, topScore } from "./score-size.ts";
   import { wallSlots, wallOrder, wallRadius, foregroundGroup } from "./wall-layout.ts";
@@ -665,14 +666,13 @@
       material.map = lightPool();
       material.needsUpdate = true;
     }
-    const styles = getComputedStyle(host);   // the view's own tokens: Obsidian's theme, mapped (styles.css)
-    const color = styles.getPropertyValue("--floor").trim() || "#e4e9e7";
+    const color = cssColor(host, "--floor");   // the view's own tokens: Obsidian's theme, mapped (styles.css)
     scene.background = new THREE.Color(color);   // no tone mapping (below): the floor is exactly the page's
-    matchColor.set(styles.getPropertyValue("--search-match").trim());
-    closestColor.set(styles.getPropertyValue("--ink-3").trim());
-    otherColor.set(styles.getPropertyValue("--search-other").trim());
+    matchColor.set(cssColor(host, "--search-match", color));
+    closestColor.set(cssColor(host, "--ink-3", color));
+    otherColor.set(cssColor(host, "--search-other", color));
     fogColor.set(color);
-    focusColor.set(styles.getPropertyValue("--focus").trim());
+    focusColor.set(cssColor(host, "--focus", color));
   }
 
   $effect(() => {

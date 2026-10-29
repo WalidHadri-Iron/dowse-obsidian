@@ -80,6 +80,7 @@ export default class DowsePlugin extends Plugin {
       search: async (query, kinds) => this.engine ? this.engine.search.search(query, { kinds }) : { ...empty, query },
       similar: async (path) => this.engine ? this.engine.search.similar(path) : empty,
       recent: async () => this.engine ? this.engine.search.recent() : [],
+      explore: async () => this.engine ? this.engine.search.explore() : { aisles: [], pieces: [], total: 0, membership: {} },
       picture: (piece, pixels) => this.pictures.picture(piece, pixels),
       open: (shown, newTab) => void openShown(this.app, shown, newTab),
       link: (path) => linkTo(this.app, path, this.app.workspace.getActiveFile()?.path ?? ""),
@@ -133,6 +134,7 @@ export default class DowsePlugin extends Plugin {
   async setSearched(path: string, searched: boolean): Promise<void> {
     this.settings = searched ? turnOn(this.settings, path) : turnOff(this.settings, path);
     await this.save();
+    this.engine?.search.changed();   // found, or not, from the next search on
     await this.engine?.indexer.sync();
     this.showStatus();
   }

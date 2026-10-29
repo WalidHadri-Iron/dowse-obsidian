@@ -4,7 +4,7 @@
 //   dowse-measure.json  → the model measured against Dowse's reference (dowse-measure-result.json)
 //   dowse-dev.json      → Dowse turned on without asking; once the vault is read, dowse-dev-result.json: what's in
 //                         the index, how long reading took, where the model ran. It may ask for more:
-//                         {"searches": ["…"], "view": "a query" (the Dowse tab opened on it), "layout": "wall" | "list",
+//                         {"searches": ["…"], "view": "a query" (the Dowse tab opened on it), "layout": "wall" | "list" | "map",
 //                          "similar": "path of a note" (the sidebar opened on it), "quick": "a query" (Quick search,
 //                          typed into), "images": true, "sound": true (the model's parts turned on first)}
 

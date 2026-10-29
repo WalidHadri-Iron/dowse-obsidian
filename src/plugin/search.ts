@@ -3,6 +3,7 @@
 // while it's asleep or loading, words alone (and it's woken; the view searches again once it's ready).
 
 import { forMeaning } from "../engine/search/dates.ts";
+import { buildMap, wordVectors, type ExploreMap, type MapFile } from "../engine/search/explore.ts";
 import { probes } from "../engine/search/probes.ts";
 import { Searcher, strongCount, type Hit, type IndexFile, type IndexSegment, type SearchOptions } from "../engine/search/searcher.ts";
 import { Prompts } from "../engine/reading/types.ts";
@@ -34,16 +35,23 @@ export function nameWords(path: string, info: Record<string, unknown>): string {
 export class VaultSearch {
   private store: Store;
   private model: { ready: () => Model | null; wake: () => void };
+  private active: (path: string) => boolean;
   private searcher: Searcher | null = null;
   private building: Promise<Searcher> | null = null;
   private stale = true;
   private builtAt = 0;
   private bank: Float32Array[] | null = null;
   private latest: Shown[] = [];   // the vault's files, most recently changed first (the wall's rack)
+  private mapFiles: MapFile[] = [];   // what Explore lays out (from the same read of the index)
+  private map: { made: ExploreMap; of: number; named: boolean } | null = null;
+  private mapping: Promise<ExploreMap> | null = null;
+  private words: Float32Array[] | null = null;
 
-  constructor(store: Store, model: { ready: () => Model | null; wake: () => void }) {
+  /** `active`: whether a file is searched (not turned off: what's turned off keeps its index, and isn't found). */
+  constructor(store: Store, model: { ready: () => Model | null; wake: () => void }, active: (path: string) => boolean) {
     this.store = store;
     this.model = model;
+    this.active = active;
   }
 
   /** The index changed: the next search (or the background) builds a fresh searcher. */
@@ -52,7 +60,7 @@ export class VaultSearch {
   }
 
   private async build(): Promise<Searcher> {
-    const rows = await this.store.files();
+    const rows = (await this.store.files()).filter((row) => this.active(row.path));
     const ids = new Map(rows.map((row, i) => [row.path, i + 1]));
     const files: IndexFile[] = rows.map((row, i) => ({ id: i + 1, path: row.path, kind: row.kind, mtime: row.mtime, info: row.info }));
     const segments: IndexSegment[] = files.map((file) => ({
@@ -60,15 +68,18 @@ export class VaultSearch {
       name: nameWords(file.path, file.info), body: "", vector: null,
     }));
     const first = new Map<string, string>();
+    const mapped = new Map<string, MapFile>(rows.map((row) => [row.path, { path: row.path, kind: row.kind, vectors: [] }]));
     for (const segment of await this.store.segments()) {
       const file = ids.get(segment.path);
       if (file === undefined) continue;
+      if (segment.vector) mapped.get(segment.path)!.vectors.push({ modality: segment.modality, vector: new Float16Array(segment.vector) });
       if (!first.has(segment.path) && segment.body) first.set(segment.path, segment.body.slice(0, 220));
       segments.push({ id: segment.id!, file, kind: segment.kind, modality: segment.modality ?? (segment.vector ? "text" : "none"),
                       loc: segment.loc, locEnd: segment.locEnd, name: "", body: segment.body,
                       vector: segment.vector ? new Float16Array(segment.vector) : null });
     }
     this.builtAt = Date.now();
+    this.mapFiles = [...mapped.values()].sort((a, b) => (a.path < b.path ? -1 : 1));   // (a stable order: the same map)
     this.latest = [...rows].sort((a, b) => b.mtime - a.mtime).map((row) => ({
       path: row.path, kind: row.kind, loc: null, locEnd: null, excerpt: first.get(row.path) ?? null, info: row.info,
     }));
@@ -116,6 +127,39 @@ export class VaultSearch {
     const hits = searcher.search(query, vector, { prefixLast: true, limit: 60, ...options });
     return { query, hits, strong: strongCount(hits), terms: termsOf(forMeaning(query, options.now)),
              meaning: vector !== null, ms: performance.now() - started };
+  }
+
+  /** Explore's map. Remade in the background once the index has changed (the last one is shown meanwhile), and
+   * once the model can name its aisles; only the first waits. */
+  async explore(): Promise<ExploreMap> {
+    await this.current();
+    const model = this.model.ready();
+    const due = !this.map || this.map.of !== this.builtAt || (!this.map.named && (model || this.words));
+    if (due && !this.mapping) {
+      this.mapping = (async () => {
+        try {
+          const of = this.builtAt, files = this.mapFiles;
+          this.words ??= await wordVectors(this.store, model ? (prompts) => model.texts(prompts) : null).catch(() => null);
+          const made = await buildMap(files, this.words);
+          this.map = { made, of, named: this.words !== null };
+          return made;
+        } finally {
+          this.mapping = null;
+        }
+      })();
+    }
+    if (!this.map && !model) this.model.wake();   // to name the aisles
+    return this.chosen(this.map?.made ?? (await this.mapping!));
+  }
+
+  /** The map without what was turned off since it was made (gone at once; the map is remade meanwhile). */
+  private chosen(map: ExploreMap): ExploreMap {
+    if (map.pieces.every((p) => this.active(p.path))) return map;
+    const pieces = map.pieces.filter((p) => this.active(p.path));
+    const membership = Object.fromEntries(Object.entries(map.membership)
+      .map(([id, paths]) => [id, paths.filter((path) => this.active(path))]));
+    const aisles = map.aisles.filter((a) => membership[a.id]?.length).map((a) => ({ ...a, count: membership[a.id].length }));
+    return { aisles, pieces, total: Object.values(membership).reduce((n, paths) => n + paths.length, 0), membership };
   }
 
   /** The vault's files, most recently changed first, at most `limit` (the wall's rack before a search). */
