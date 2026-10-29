@@ -107,6 +107,7 @@
   let rimGeometry: THREE.BufferGeometry;
   let glassMaterial: THREE.MeshPhysicalMaterial;
   const matchColor = new THREE.Color(), closestColor = new THREE.Color(), otherColor = new THREE.Color(), fogColor = new THREE.Color(), focusColor = new THREE.Color();
+  const placeholderColor = new THREE.Color(0xcfd8d5);   // a case before its face is drawn: the theme's, once known
 
   // Pictures reach the graphics card a few a frame. Arriving together (from the picture cache, all in a fraction of
   // a second), sixty were uploaded in one frame and froze the page for half a second (texSubImage2D, measured with
@@ -340,7 +341,8 @@
       // front through the picture, and the part behind showed as a refracted, washed-out copy.
       vitrine.group.rotation.set(vitrine.tilt.x, vitrine.facing + vitrine.tilt.y, 0);
       const light = 0.5 + 0.5 * vitrine.now.o;
-      vitrine.pictureMaterial.color.setRGB(light, light, light);
+      if (vitrine.pictureMaterial.map) vitrine.pictureMaterial.color.setRGB(light, light, light);
+      else vitrine.pictureMaterial.color.copy(placeholderColor).multiplyScalar(light);   // (its face still to come)
       const background = searching && !!vitrine.piece.back;
       vitrine.softness.value = background ? 1 : 0;
       if (background) vitrine.pictureMaterial.color.lerp(otherColor, 0.12);
@@ -656,14 +658,16 @@
     const canvas = document.createElement("canvas");
     canvas.width = 512; canvas.height = 288;
     const g = canvas.getContext("2d")!;
-    const dark = document.documentElement.dataset.theme === "dark";
+    // The theme's own light: its text colour, faint, on a dark floor; white on a light one (`dark`: Obsidian's theme)
+    const glow = (alpha: number) => dark ? cssColor(host, "--ink").replace("rgb(", "rgba(").replace(")", `, ${alpha})`)
+      : `rgba(255, 255, 255, ${alpha})`;
     // An ellipse that fades to nothing before every edge: a circle on this wide canvas was cut off at the top and
     // bottom while still half lit, and the pool showed as a rectangle (on the dark floor most)
     g.setTransform(1, 0, 0, 288 / 512, 0, 0);
     const light = g.createRadialGradient(256, 256, 8, 256, 256, 250);
-    light.addColorStop(0, dark ? "rgba(140, 214, 204, 0.16)" : "rgba(255, 255, 255, 0.85)");
-    light.addColorStop(0.6, dark ? "rgba(140, 214, 204, 0.06)" : "rgba(255, 255, 255, 0.32)");
-    light.addColorStop(1, dark ? "rgba(140, 214, 204, 0)" : "rgba(255, 255, 255, 0)");
+    light.addColorStop(0, glow(dark ? 0.1 : 0.85));
+    light.addColorStop(0.6, glow(dark ? 0.04 : 0.32));
+    light.addColorStop(1, glow(0));
     g.fillStyle = light;
     g.fillRect(0, 0, 512, 512);
     const texture = new THREE.CanvasTexture(canvas);
@@ -685,6 +689,7 @@
     otherColor.set(cssColor(host, "--search-other", color));
     fogColor.set(color);
     focusColor.set(cssColor(host, "--focus", color));
+    placeholderColor.set(cssColor(host, "--floor-sunk", color));
   }
 
   $effect(() => {

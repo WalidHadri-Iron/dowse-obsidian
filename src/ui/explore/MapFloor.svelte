@@ -37,9 +37,10 @@
   import { topScore } from "../wall/score-size.ts";
   import { CLOSEST_LABEL } from "../wall/search-confidence.ts";
   import { exploreAppearance, fitExplore } from "./explore-view.ts";
+  import Icon from "../wall/Icon.svelte";
 
   let { pieces, aisles, found = null, scores = null, clear = true, matches = null, selected = null, dark = false,
-        picture, onselect, onopen, onhover, ondragout }: {
+        picture, onselect, onopen, onhover, ondragout, onstep }: {
     pieces: MapPiece[];
     aisles: MapAisle[];
     found?: Map<string, number> | null;   // path → rank, while a search is on
@@ -56,6 +57,8 @@
     onhover?: (event: MouseEvent, piece: MapPiece, target: HTMLElement) => void;
     /** The case picked dragged out, into a note: dragging any other case, or the floor, walks. */
     ondragout?: (piece: MapPiece, event: DragEvent) => void;
+    /** ↑/↓ on the floor: the next result, or the one before. */
+    onstep?: (step: 1 | -1) => void;
   } = $props();
 
   let host: HTMLDivElement;
@@ -113,6 +116,7 @@
   let rim: THREE.BufferGeometry, rimMaterial: THREE.MeshBasicMaterial;
   let outline: THREE.BufferGeometry;
   const matchColor = new THREE.Color(), closestColor = new THREE.Color(), otherColor = new THREE.Color(), fogColor = new THREE.Color(), focusColor = new THREE.Color();
+  const placeholderColor = new THREE.Color(0xc9d3d0);   // a case before its picture: the theme's, once known
 
   function caseRelevance(path: string) { return relevance(path, found, clear && (matches === null || matches.has(path))); }
   let shade: THREE.BufferGeometry, shadeMaterial: THREE.MeshBasicMaterial;
@@ -126,7 +130,7 @@
     for (const badge of badges.values()) badge.remove();
     badges.clear();
     for (const piece of pieces) {
-      const material = new THREE.MeshBasicMaterial({ color: 0xc9d3d0, toneMapped: false });
+      const material = new THREE.MeshBasicMaterial({ color: placeholderColor, toneMapped: false });
       const { softness, texel } = softenBackground(material, fogColor, .45);
       const picture = new THREE.Mesh(plate, material);
       const front = new THREE.Mesh(glass, glassMaterial);
@@ -196,7 +200,9 @@
         : state === "other" ? otherColor : state === "closest" ? closestColor : matchColor);
       c.outline.opacity = style.outline;
       let badge = badges.get(c.piece.path);
-      if (rank === undefined) { badge?.remove(); badges.delete(c.piece.path); continue; }
+      // Numbered: the matches, or the first five when nothing clearly matches (not every case a search ranked)
+      const numbered = rank !== undefined && (state === "match" || (!clear && rank < 5));
+      if (!numbered) { badge?.remove(); badges.delete(c.piece.path); continue; }
       if (!badge) {
         badge = document.createElement("button"); badge.className = "rank-badge";
         badge.dataset.path = c.piece.path;
@@ -266,7 +272,7 @@
     const old = cases.filter((c) => c.bytes && !c.pending && !visible.has(c)).sort((a, b) => a.seen - b.seen);
     for (const c of old) {
       c.material.map?.dispose(); c.material.map = null; c.material.needsUpdate = true;
-      c.material.color.set(0xc9d3d0);
+      c.material.color.copy(placeholderColor);
       textureBytes -= c.bytes; c.bytes = 0; c.pixels = 0;
       if (textureBytes <= TEXTURE_BUDGET) break;
     }
@@ -381,17 +387,23 @@
     const order = aisles.map((_, i) => i).sort((a, b) => signRank(aisles[b]) - signRank(aisles[a]));
     for (const i of order) {
       const aisle = aisles[i];
-      const top = tops.get(aisle.index) ?? { x: aisle.x, y: aisle.y + aisle.radius };
-      v.set(top.x, top.y + H / 2 + 0.12, 0).project(camera);   // just above the aisle's own top case
       const sign = signs[i];
       if (!sign) continue;
-      const screenX = ((v.x + 1) / 2) * width, screenY = ((1 - v.y) / 2) * height;
+      v.set(aisle.x, aisle.y - aisle.radius, 0).project(camera);   // the aisle's lowest point
+      const lowest = ((1 - v.y) / 2) * height;
+      const top = tops.get(aisle.index) ?? { x: aisle.x, y: aisle.y + aisle.radius };
+      v.set(top.x, top.y + H / 2 + 0.25, 0).project(camera);   // above the aisle's own top case, clear of it
       const [signWidth, signHeight] = sizes[i];
+      let screenX = ((v.x + 1) / 2) * width, screenY = ((1 - v.y) / 2) * height;
+      // An aisle still in view keeps its sign: held at the top edge once its own top has gone above it, and inside
+      // the sides (ranked cases sat under no name when their aisle's top was out of view)
+      const onScreen = v.z < 1 && lowest > signHeight + 12 && screenY < height
+        && screenX > -signWidth / 2 && screenX < width + signWidth / 2;
+      screenY = Math.max(screenY, signHeight + 6);
+      screenX = Math.min(Math.max(screenX, signWidth / 2 + 4), width - signWidth / 2 - 4);
       const box = { left: screenX - signWidth / 2 - 4, right: screenX + signWidth / 2 + 4, top: screenY - signHeight - 3, bottom: screenY + 3 };
-      const onScreen = v.z < 1 && screenX > signWidth / 2 && screenX < width - signWidth / 2
-        && screenY > signHeight && screenY < height;
-      const clear = !placed.some((p) => p.left < box.right && box.left < p.right && p.top < box.bottom && box.top < p.bottom);
-      const visible = onScreen && clear;
+      const free = !placed.some((p) => p.left < box.right && box.left < p.right && p.top < box.bottom && box.top < p.bottom);
+      const visible = onScreen && free;
       if (visible) placed.push(box);
       sign.style.opacity = visible ? "1" : "0";
       sign.style.pointerEvents = visible ? "auto" : "none";
@@ -496,6 +508,17 @@
   let lastClick = -Infinity;
   function key(event: KeyboardEvent): void {
     if (event.key === "Enter" && selected && byPath.has(selected)) { event.preventDefault(); onopen(byPath.get(selected)!.piece); }
+    else if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); onstep?.(event.key === "ArrowDown" ? 1 : -1); }
+    else if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomBy(1 / 1.3); }
+    else if (event.key === "-") { event.preventDefault(); zoomBy(1.3); }
+    else if (event.key === "0") { event.preventDefault(); overview(); }
+  }
+
+  /** Closer (< 1) or further (> 1), toward the middle of the view. */
+  function zoomBy(factor: number): void {
+    viewTo = { ...viewTo, z: Math.min(Math.max(viewTo.z * factor, 2.2), 80) };
+    cameraMode = "manual";
+    wake();
   }
   function wheel(event: WheelEvent): void {
     event.preventDefault();
@@ -534,7 +557,9 @@
       const state = caseRelevance(c.piece.path);
       c.outline.color.copy(selected === c.piece.path && state !== "other" && found ? focusColor : state === "other" ? otherColor : state === "closest" ? closestColor : matchColor);
     }
-    rimMaterial?.color.set(dark ? 0x6f8f8c : 0xfbfdfc);
+    placeholderColor.set(cssColor(host, "--floor-sunk", color));
+    for (const c of cases) if (!c.material.map) c.material.color.copy(placeholderColor);
+    rimMaterial?.color.set(dark ? cssColor(host, "--hairline", color) : 0xfbfdfc);   // (the theme's edge, at night)
     shadeMaterial?.color.set(dark ? 0x000000 : 0x1d3335);
     if (shadeMaterial) shadeMaterial.opacity = dark ? 0.5 : 0.2;
   }
@@ -640,6 +665,11 @@
   <div class="signs" bind:this={signLayer}></div>
   <div class="tags" bind:this={tagLayer} aria-hidden="true"></div>
   <div class="ranks" bind:this={rankLayer}></div>
+  <div class="map-controls" role="group" aria-label="Map zoom">
+    <button onclick={() => zoomBy(1.3)} aria-label="Further away" title="Further away (−)"><Icon name="remove" size={18} /></button>
+    <button onclick={() => zoomBy(1 / 1.3)} aria-label="Closer" title="Closer (+)"><Icon name="add" size={18} /></button>
+    <button class="whole" onclick={overview} aria-label="See the whole floor" title="See the whole floor (0)"><Icon name="layers" size={18} /></button>
+  </div>
 </div>
   {#if found !== null}
     <div class="relevance-key" aria-label="Search relevance">
@@ -648,7 +678,7 @@
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
       <span class="other">Other files · softened</span>
       {#if found.size && clear}<span class="size-note">Larger = stronger match</span>{/if}
-      {#if found.size}<span class="size-note">Numbers = rank · Alt+↑/↓</span>{/if}
+      {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>
   {:else}
     <div class="relevance-key"><span class="size-note">Scroll to come closer · drag to walk · a sign takes you to its aisle · double-click opens{ondragout ? " · drag a picked file into a note to link it" : ""}</span></div>
@@ -660,6 +690,13 @@
   .map-view { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; height: 100%; }
   .map-view > .relevance-key { order: -1; }
   .floor { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: grab; touch-action: none; }
+  /* As the wall's zoom: closer, further, the whole floor (above Obsidian's status bar) */
+  .map-controls { position: absolute; right: var(--s-4); bottom: calc(var(--s-4) + 32px); z-index: 2;
+                  display: flex; align-items: center; padding: var(--s-1); border: 1px solid var(--hairline);
+                  border-radius: var(--r-field); background: var(--floor-raised); box-shadow: var(--lift-1); cursor: default; }
+  .map-controls button { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-steel); }
+  .map-controls button:hover { background: var(--floor-sunk); }
+  .map-controls .whole { margin-left: var(--s-1); border-left: 1px solid var(--hairline); border-radius: 0; }
   .floor :global(canvas) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .signs, .tags, .ranks { position: absolute; inset: 0; pointer-events: none; }
   .relevance-key { display: flex; flex-wrap: wrap;

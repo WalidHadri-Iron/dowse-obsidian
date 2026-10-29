@@ -2,9 +2,8 @@
 // how far reading is (pausing it), what's turned off, and the room Dowse takes on this computer (the model can be
 // removed: it stays in Obsidian's cache otherwise, even once the plugin is gone).
 
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, type ButtonComponent, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
-import { DTYPE } from "./engine.ts";
 import { isOn, plainExclusions } from "./settings.ts";
 import { kindOf } from "../engine/reading/types.ts";
 import { prefer, preferred, situation } from "./graphics.ts";
@@ -13,6 +12,25 @@ import { heldText, modelTrouble, readingText } from "./status.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
+
+/** A button that does what it says only when clicked again within a few seconds: the first click says what it will
+ * cost (nothing undoes it). */
+function twice(button: ButtonComponent, label: string, cost: () => string, run: () => Promise<void>): void {
+  let armed = 0;
+  const reset = () => { button.setButtonText(label); button.buttonEl.removeClass("mod-warning"); };
+  reset();
+  button.onClick(async () => {
+    if (!armed) {
+      button.setButtonText(cost()).setWarning();
+      armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
+      return;
+    }
+    window.clearTimeout(armed);
+    armed = 0;
+    button.setDisabled(true);
+    await run();
+  });
+}
 
 export class DowseSettingTab extends PluginSettingTab {
   private plugin: DowsePlugin;
@@ -161,7 +179,7 @@ export class DowseSettingTab extends PluginSettingTab {
     this.showDisk();
     new Setting(el).setName("Read everything again")
       .setDesc("Clears this vault's index and reads the vault again from the start.")
-      .addButton((button) => button.setButtonText("Read again").onClick(async () => {
+      .addButton((button) => twice(button, "Read again", () => `Click again (${this.files()})`, async () => {
         await this.plugin.turnOff(true);
         await this.plugin.turnOn();
         this.display();
@@ -172,12 +190,17 @@ export class DowseSettingTab extends PluginSettingTab {
         await this.plugin.turnOff(false);
         this.display();
       }))
-      .addButton((button) => button.setButtonText("Turn off and delete").setWarning().onClick(async () => {
-        await this.plugin.turnOff(true);
-        this.display();
-      }));
+      .addButton((button) => twice(button, "Turn off and delete", () => `Click again to delete (${this.files()})`,
+        async () => {
+          await this.plugin.turnOff(true);
+          this.display();
+        }));
+  }
 
-    el.createEl("p", { cls: "setting-item-description", text: `Model build: ${DTYPE}.` });
+  /** "280 files", as far as the index knows (else the vault). */
+  private files(): string {
+    const n = this.plugin.engine?.disk?.files ?? this.app.vault.getFiles().length;
+    return `${n.toLocaleString()} file${n === 1 ? "" : "s"}`;
   }
 
   /** The model's files on this computer: their size, as the engine measured it. Removed once Dowse is off here
@@ -190,27 +213,15 @@ export class DowseSettingTab extends PluginSettingTab {
    * way to leave nothing behind before removing the plugin. Its size isn't shown: Settings never reads storage itself
    * (see `Engine.disk`), and with Dowse off there's no engine to have measured it. */
   private removeSetting(el: HTMLElement): void {
-    let armed = 0;
     new Setting(el).setName("Remove the search model from this computer")
       .setDesc("Its files stay in Obsidian's cache, for all your vaults, until removed here, even once the plugin is " +
         "gone. Vaults where Dowse is on download it again when they next need it.")
-      .addButton((button) => {
-        const reset = () => { button.setButtonText("Remove"); button.buttonEl.removeClass("mod-warning"); };
-        reset();
-        button.onClick(async () => {
-          if (!armed) {
-            button.setButtonText("Click again to remove").setWarning();
-            armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
-            return;
-          }
-          window.clearTimeout(armed);
-          armed = 0;
-          button.setButtonText("Removing…").setDisabled(true);
-          const freed = await this.plugin.removeModel();
-          new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
-          this.display();
-        });
-      });
+      .addButton((button) => twice(button, "Remove", () => "Click again to remove", async () => {
+        button.setButtonText("Removing…");
+        const freed = await this.plugin.removeModel();
+        new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
+        this.display();
+      }));
   }
 
   /** A PC with a graphics card and an integrated GPU: run Obsidian on the card (Windows' own preference for it). Only

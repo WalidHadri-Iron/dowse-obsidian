@@ -73,10 +73,13 @@ export class SimilarView extends ItemView {
   }
 }
 
-/** Quick search: type what you remember, Enter opens it where it matched (Ctrl/⌘-Enter: in a new tab). */
+/** Quick search: type what you remember, Enter opens it where it matched (Ctrl/⌘-Enter: in a new tab). The matches
+ * first; what's only close after them, quieter, the first of them saying so. */
 export class QuickSearch extends SuggestModal<Shown> {
   private controller: Controller;
   private recent: Shown[] = [];
+  private onlyClose = new WeakSet<Shown>();
+  private firstClose: Shown | null = null;
 
   constructor(app: App, controller: Controller) {
     super(app);
@@ -99,11 +102,16 @@ export class QuickSearch extends SuggestModal<Shown> {
   async getSuggestions(query: string): Promise<Shown[]> {
     if (!query.trim()) return this.recent;
     const answer = await this.controller.search(query, []);
-    return answer.hits.slice(0, 20).map(shownOf);
+    const items = answer.hits.slice(0, 20).map(shownOf);
+    this.firstClose = answer.strong > 0 && answer.strong < items.length ? items[answer.strong] : null;
+    if (answer.strong > 0) for (const item of items.slice(answer.strong)) this.onlyClose.add(item);
+    return items;
   }
 
   renderSuggestion(item: Shown, el: HTMLElement): void {
     el.addClass("dowse-suggestion");
+    if (this.onlyClose.has(item)) el.addClass("is-close");
+    if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Not as close" });
     el.createDiv({ cls: "dowse-result-title", text: titleOf(item) });
     el.createDiv({ cls: "dowse-result-line", text: lineOf(item) });
     if (item.excerpt) {

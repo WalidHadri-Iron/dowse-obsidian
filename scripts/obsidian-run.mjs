@@ -9,6 +9,9 @@
 // hand), for what the plugin can't measure of itself, such as how long Obsidian takes to load it.
 //
 // `--detach`: the debugger let go once the vault is trusted (nothing attached while the plugin works; no screenshots).
+// `--steps <file>`: a tour, once the plugin has loaded (instead of waiting for a file): a JSON list of steps, each
+// {"js": "…" (run in the page, `app` and `p` = the plugin at hand), "size": [w, h] (the window), "wait": ms,
+// "shot": "name" (the main window), "settingsShot": "name" (Settings' own window)}.
 // `--offline`: Obsidian without the internet (a proxy that isn't there): the model can't be downloaded.
 // `--plain`: Obsidian started as a person starts it (no debugging port: the profile must trust the vault already).
 //
@@ -67,6 +70,25 @@ if (!page) throw new Error("no Obsidian window");
 page.on("console", (message) => appendFileSync(log, `[${message.type()}] ${message.text()}\n`));
 page.on("pageerror", (error) => appendFileSync(log, `[pageerror] ${error.message}\n`));
 
+async function tour(steps) {
+  for (const step of steps) {
+    if (step.size) await page.evaluate(([w, h]) => {   // (Electron has no DevTools window bounds)
+      try { const win = require("@electron/remote").getCurrentWindow(); win.unmaximize(); win.setSize(w, h); return; } catch {}
+      try { const win = require("electron").remote.getCurrentWindow(); win.unmaximize(); win.setSize(w, h); return; } catch {}
+      window.resizeTo(w, h);
+    }, step.size).catch((error) => console.log("resize failed:", error.message));
+    if (step.js) await page.evaluate(`(async () => { const p = app.plugins.plugins.dowse; ${step.js} })()`)
+      .catch((error) => console.log(`step failed: ${step.js.slice(0, 80)}: ${error.message}`));
+    await new Promise((r) => setTimeout(r, step.wait ?? 600));
+    if (step.shot) await page.screenshot({ path: join(shots, `${step.shot}.png`) });
+    if (step.settingsShot) {
+      const other = (await browser.pages()).find((p) => p !== page && p.url() === "about:blank");
+      if (other) await other.screenshot({ path: join(shots, `${step.settingsShot}.png`) });
+      else console.log("no Settings window for", step.settingsShot);
+    }
+  }
+}
+
 async function dragFrom(selector) {
   const box = await page.$eval(selector, (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
   const cursor = () => page.$eval(selector, (el) => el.style.cursor);
@@ -108,6 +130,7 @@ while (Date.now() - started < timeout) {
     const body = readFileSync(args.eval, "utf8");
     page.evaluate(`(async () => { ${body} })()`).catch((error) => appendFileSync(log, `[eval] ${error.message}\n`));
   }
+  if (args.steps && evaluated !== "toured" && await page.evaluate(() => Boolean(window.app?.plugins?.plugins?.dowse)).catch(() => false)) break;
   if (existsSync(waitFor)) {
     try { if (JSON.parse(readFileSync(waitFor, "utf8")).done) break; } catch {}
   }
@@ -122,6 +145,7 @@ if (!page) {   // (detached)
   stop();
   process.exit(0);
 }
+if (args.steps) await tour(JSON.parse(readFileSync(args.steps, "utf8"))).catch((error) => console.log("tour failed:", error.message));
 if (args.drag) await dragFrom(args.drag).catch((error) => writeFileSync(join(shots, "drag.json"), JSON.stringify({ error: error.message })));
 await page.screenshot({ path: join(shots, "final.png") }).catch(() => {});
 // Obsidian's other windows (Settings opens in its own since 1.14, a note popped out: about:blank pages the main

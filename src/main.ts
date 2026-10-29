@@ -204,12 +204,26 @@ export default class DowsePlugin extends Plugin {
     };
   }
 
-  /** The Dowse tab: the one open, else a new one. */
+  /** The Dowse tab: the one open, else an empty tab of the main area, else a new one. */
   async openSearch(query = ""): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(SEARCH_VIEW)[0];
-    const leaf: WorkspaceLeaf = open ?? this.app.workspace.getLeaf("tab");
+    const leaf: WorkspaceLeaf = open ?? this.freshTab();
     await leaf.setViewState({ type: SEARCH_VIEW, active: true, state: query ? { query } : {} });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** A tab of the main area to open Dowse in: an empty one (a "New tab") if there is one, else a new one. Obsidian's own
+   * "new tab" throws ("No tab group found") when the last pane used has no tab group: then one is made in the main
+   * area itself. */
+  private freshTab(): WorkspaceLeaf {
+    const workspace = this.app.workspace;
+    const recent = workspace.getMostRecentLeaf(workspace.rootSplit);
+    if (recent?.view.getViewType() === "empty") return recent;
+    try {
+      return workspace.getLeaf("tab");
+    } catch {
+      return workspace.createLeafInParent(workspace.rootSplit, 0);
+    }
   }
 
   async openSimilar(): Promise<void> {

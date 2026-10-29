@@ -44,7 +44,9 @@
   // svelte-ignore state_referenced_locally
   let reading = $state(controller.reading());
   // svelte-ignore state_referenced_locally
-  const counts = controller.counts();   // (for the first screen)
+  const counts = controller.counts();   // (for the first screen, and the kinds' chips)
+  // The kinds this vault has (and the one chosen): a chip for a kind with no file in it is a choice that can't matter
+  const kindsHere = $derived(KINDS.filter(([id, , of]) => !of.length || of.some((k) => (counts[k] ?? 0) > 0) || id === kind));
   let input = $state<HTMLInputElement>();
   let map = $state<ExploreMap | null>(null);
   let chosen = $state<string | null>(null);   // the case picked on the floor
@@ -234,17 +236,11 @@
     </div>
   {:else}
     <div class="dowse-head">
-      <div class="dowse-search">
-        <Icon name="search" size={18} />
-        <input bind:this={input} type="search" placeholder="Describe what you remember" bind:value={query}
-               oninput={changed} onkeydown={keys} spellcheck="false" aria-label="Search the vault" />
-      </div>
-      <div class="dowse-bar">
-        <div class="dowse-kinds" role="radiogroup" aria-label="Kinds of files">
-          {#each KINDS as [id, label]}
-            <button class="dowse-chip" class:is-active={kind === id} role="radio" aria-checked={kind === id}
-                    onclick={() => { kind = id; void run(); }}>{label}</button>
-          {/each}
+      <div class="dowse-search-row">
+        <div class="dowse-search">
+          <Icon name="search" size={18} />
+          <input bind:this={input} type="search" placeholder="Describe what you remember" bind:value={query}
+                 oninput={changed} onkeydown={keys} spellcheck="false" aria-label="Search the vault" />
         </div>
         <div class="dowse-layout" role="radiogroup" aria-label="Show results as">
           <button class="clickable-icon" class:is-active={layout === "wall"} aria-label="As a wall" role="radio"
@@ -253,9 +249,14 @@
                   aria-checked={layout === "list"} onclick={() => setLayout("list")}><Icon name="list" size={16} /></button>
           <button class="clickable-icon" class:is-active={layout === "map"} aria-label="Explore: the whole vault, by what's in it"
                   role="radio" aria-checked={layout === "map"} onclick={() => setLayout("map")}><Icon name="map" size={16} /></button>
-          {#if layout === "map"}
-            <button class="clickable-icon" aria-label="See the whole floor" onclick={() => floor?.overview()}><Icon name="layers" size={16} /></button>
-          {/if}
+        </div>
+      </div>
+      <div class="dowse-bar">
+        <div class="dowse-kinds" role="radiogroup" aria-label="Kinds of files">
+          {#each kindsHere as [id, label]}
+            <button class="dowse-chip" class:is-active={kind === id} role="radio" aria-checked={kind === id}
+                    onclick={() => { kind = id; void run(); }}>{label}</button>
+          {/each}
         </div>
       </div>
       {#if strip}
@@ -281,7 +282,9 @@
                     onselect={(piece) => (chosen = piece.path)}
                     onopen={(piece) => controller.open(shownFor(piece.path), false)}
                     onhover={(event, piece, target) => controller.hover(event, piece.path, target)}
-                    ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)} />
+                    ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)}
+                    onstep={(step) => { const path = rankedStep(ranked.map((h) => h.path), chosen, step);
+                                        if (path) { chosen = path; floor?.focusResult(path); } }} />
         {:else if map}
           <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
         {/if}
@@ -292,7 +295,8 @@
               onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item) controller.open(item, false); }}
               ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
-        <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)} />
+        <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)}
+                    strong={searching && answer ? answer.strong : null} />
       {:else if searching && answer && !busy}
         <div class="dowse-empty">Nothing in this vault matches “{query}”.</div>
       {:else if !searching}

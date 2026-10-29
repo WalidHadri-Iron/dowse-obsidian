@@ -1,18 +1,21 @@
 <script lang="ts">
-  // Results as a list, as Obsidian lists files: the kind's icon, the title, where it matched, the words found.
+  // Results as a list, as Obsidian lists files: the kind's icon, the title, where it matched, the words found. The
+  // search's matches first; after them, set apart and quieter, what's only close (`strong`: how many matched).
   import type { Snippet } from "svelte";
   import Icon from "./wall/Icon.svelte";
   import { KIND_ICON, lineOf, runs, titleOf, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
 
-  let { items, selected = -1, compact = false, controller, onselect, aside }: {
+  let { items, selected = -1, compact = false, controller, onselect, aside, strong = null }: {
     items: Shown[];
     selected?: number;
     compact?: boolean;       // the sidebar's: no excerpts
     controller: Controller;
     onselect?: (index: number) => void;
     aside?: Snippet<[Shown]>;   // at the row's end (the sidebar's: linked, or a button to link it)
+    strong?: number | null;     // a search's matches, the first so many (null: not a search)
   } = $props();
+  const close = (index: number) => strong !== null && strong > 0 && index >= strong;
 
   let list: HTMLElement;
   $effect(() => {
@@ -30,8 +33,9 @@
 
 <div class="dowse-results" class:compact bind:this={list} role="listbox" aria-label="Results">
   {#each items as item, index (item.path + ":" + item.loc)}
-    <div class="dowse-result" class:is-selected={index === selected} data-index={index} role="option"
-         aria-selected={index === selected} tabindex="-1" draggable="true" ondragstart={(e) => drag(e, item)}
+    {#if close(index) && index === strong}<div class="dowse-results-divider" aria-hidden="true">Not as close</div>{/if}
+    <div class="dowse-result" class:is-selected={index === selected} class:is-close={close(index)} data-index={index}
+         role="option" aria-selected={index === selected} tabindex="-1" draggable="true" ondragstart={(e) => drag(e, item)}
          onmouseover={(e) => controller.hover(e, item.path, e.currentTarget as HTMLElement)}
          onfocus={() => onselect?.(index)}
          onclick={(e) => { onselect?.(index); controller.open(item, e.ctrlKey || e.metaKey); }}
@@ -39,7 +43,7 @@
          onkeydown={(e) => { if (e.key === "Enter") controller.open(item, e.ctrlKey || e.metaKey); }}>
       <span class="dowse-result-icon"><Icon name={KIND_ICON[item.kind] ?? "file"} size={16} /></span>
       <div class="dowse-result-text">
-        <div class="dowse-result-title">{titleOf(item)}</div>
+        <div class="dowse-result-title">{#if close(index)}<span class="dowse-unseen">Not as close: </span>{/if}{titleOf(item)}</div>
         <div class="dowse-result-line">{lineOf(item)}</div>
         {#if item.excerpt && !compact}
           <div class="dowse-result-excerpt">

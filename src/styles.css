@@ -18,7 +18,7 @@
   --tag: var(--background-secondary);
   --tag-ink: var(--text-muted);
   --tag-found: var(--interactive-accent);
-  --rail: var(--background-secondary);
+  --rail: cubic-bezier(0.2, 0, 0, 1);   /* Dowse's easing (its tokens.css), not a colour */
   --steel: var(--interactive-normal);
   --steel-raised: var(--interactive-hover);
   --steel-ink: var(--text-normal);
@@ -38,7 +38,7 @@
   --r-steel: var(--radius-m);
   --lift-1: var(--shadow-s);
   --lift-2: var(--shadow-l);
-  --t-rail: 160ms ease;
+  --t-rail: 140ms;   /* (Dowse's; the easing is --rail) */
 }
 
 .dowse-view.view-content { padding: 0; overflow: hidden; }
@@ -48,6 +48,9 @@
 .dowse-head { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--s-4) var(--s-2);
   border-bottom: 1px solid var(--hairline); }
 
+/* The search, and beside it how results show: always there, in the same place */
+.dowse-search-row { display: flex; align-items: center; gap: var(--s-2); }
+.dowse-search-row .dowse-search { flex: 1; min-width: 0; }
 .dowse-search { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-3);
   border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m);
   background: var(--background-modifier-form-field); color: var(--text-muted); }
@@ -64,6 +67,7 @@
 .dowse-layout { display: flex; gap: 2px; }
 .dowse-layout .is-active { color: var(--interactive-accent); background: var(--background-modifier-hover); }
 .dowse-summary { min-height: 1.4em; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.dowse-summary:empty { display: none; }   /* (the reading strip says it all meanwhile) */
 
 .dowse-body { flex: 1; min-height: 0; position: relative; overflow: auto; }
 .dowse-body.dowse-floor { overflow: hidden; }
@@ -83,6 +87,17 @@
 .dowse-result-excerpt mark, .dowse-suggestion mark { background: var(--text-highlight-bg); color: var(--text-normal);
   border-radius: 2px; padding: 0 1px; }
 .dowse-results.compact .dowse-result { padding: 4px var(--s-2); }
+/* Said to a screen reader, not shown */
+.dowse-unseen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* What's only close, after a search's matches: set apart, quieter */
+.dowse-results-divider, .dowse-suggestion-divider { font-size: var(--font-ui-smaller); color: var(--text-muted);
+  letter-spacing: 0.01em; }
+.dowse-results-divider { margin: var(--s-2) var(--s-2) 2px; padding-top: var(--s-2);
+  border-top: 1px solid var(--background-modifier-border); }
+.dowse-suggestion-divider { margin: -2px 0 4px; }
+.dowse-result.is-close .dowse-result-title, .dowse-suggestion.is-close .dowse-result-title { color: var(--text-muted);
+  font-weight: var(--font-normal); }
 
 .dowse-suggestion { display: flex; flex-direction: column; gap: 1px; }
 
