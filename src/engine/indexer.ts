@@ -1,6 +1,11 @@
 // Keeps the vault's index in step with the vault: finds what's new, changed or gone, and reads what's waiting, a step
 // at a time (a long note 40 passages, a PDF 30 pages, a recording or video ten minutes), each step saved as it's
-// read, so a stopped run resumes where it was. You first: between pieces it waits while you're typing.
+// read, so a stopped run resumes where it was. You first: between pieces it waits while you're typing, and it stops
+// while reading is paused (your pause, the battery) or the model can't start (no connection for its download: the
+// files wait, they aren't failed).
+//
+// How long is left is told from how fast this computer has read each kind of file so far (time a byte; an image's
+// time a file), once it has read enough to tell.
 //
 // Every file of a kind Dowse knows has a row, so its name is searched; what's in an image, a recording or a video is
 // read once the model's part for it (images, sound) is on. Until then the row says what it waits for, and turning that
@@ -42,12 +47,21 @@ export interface Embedder {
 }
 
 export interface Status {
-  state: "idle" | "reading" | "waiting" | "stopped";
+  state: "idle" | "reading" | "waiting" | "paused" | "stopped";
   done: number;           // files read
   total: number;          // files to read, all told
   current?: string;       // the file being read
   failed: number;
+  held?: string;          // why it's paused ("paused", "on battery", "the model couldn't start")
+  left?: number | null;   // seconds left, about (null until enough is read to tell)
 }
+
+/** The model couldn't be had (its download, its start): reading waits for it, and the file isn't failed. */
+export class ModelMissing extends Error {}
+
+export const RETRY_MS = 2 * 60 * 1000;   // the model tried again, when it couldn't start
+const PER_FILE = new Set<Kind>(["image"]);   // a picture takes as long whatever its file's size
+const TELLS = { files: 3, seconds: 5 };   // read before the time left is told
 
 export const DOC_STEP = 40;   // passages a step
 
@@ -57,6 +71,7 @@ export interface IndexerOptions {
   embed: () => Promise<Embedder>;         // the model, loaded when there's something to read
   gpu?: () => boolean;                    // on a GPU (bigger pictures, more frames), as far as is known
   busy?: () => boolean;                   // the person is typing: wait
+  held?: () => string | null;             // reading paused, and why (the person's pause, the battery)
   onStatus?: (status: Status) => void;
   onSaved?: (path: string) => void;       // a step saved: search sees it
 }
@@ -67,6 +82,8 @@ export class Indexer {
   private settledWaiters: (() => void)[] = [];
   private running = false;
   private stopped = false;
+  private waited = 0;   // ms of the file being read spent waiting (for you, for the model): not reading
+  private speed = new Map<Kind, { seconds: number; bytes: number; files: number }>();
 
   private store: Store;
   private source: Source;
@@ -166,16 +183,29 @@ export class Indexer {
     this.stopped = false;
     try {
       while (!this.stopped) {
-        const next = (await this.waiting())[0];
+        const waiting = await this.waiting();
+        const next = waiting[0];
         if (!next) {
-          this.report({ state: "idle", current: undefined });
+          this.report({ state: "idle", current: undefined, held: undefined, left: null });
           for (const settled of this.settledWaiters.splice(0)) settled();
           await new Promise<void>((resolve) => (this.wake = resolve));
           this.wake = null;
           continue;
         }
-        this.report({ state: "reading", current: next.path });
-        await this.read(next);
+        this.report({ state: "reading", current: next.path, left: this.estimate(waiting), held: undefined });
+        await this.pause();
+        if (this.stopped) break;
+        const started = performance.now();
+        this.waited = 0;
+        try {
+          await this.read(next);
+        } catch (error) {
+          if (!(error instanceof ModelMissing)) throw error;
+          this.report({ state: "paused", held: "the model couldn't start" });   // tried again later, or when asked
+          await this.sleep(RETRY_MS);
+          continue;
+        }
+        this.learn(next, (performance.now() - started - this.waited) / 1000);
         this.report({ done: this.status.done + 1 });
       }
     } finally {
@@ -197,12 +227,52 @@ export class Indexer {
     this.poke();
   }
 
+  /** Waits while reading is paused, or while you're typing. */
   private async pause(): Promise<void> {
-    while (this.options.busy?.() && !this.stopped) {
-      this.report({ state: "waiting" });
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    while (!this.stopped) {
+      const held = this.options.held?.() ?? null;
+      if (held) this.report({ state: "paused", held });
+      else if (this.options.busy?.()) this.report({ state: "waiting", held: undefined });
+      else break;
+      const started = performance.now();
+      await this.sleep(500);   // (or resumed)
+      this.waited += performance.now() - started;
     }
-    if (this.status.state === "waiting") this.report({ state: "reading" });
+    if (this.status.state === "waiting" || this.status.state === "paused") this.report({ state: "reading", held: undefined });
+  }
+
+  /** Waits `ms`, or until poked. */
+  private async sleep(ms: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await new Promise<void>((resolve) => { this.wake = resolve; timer = setTimeout(resolve, ms); });
+    clearTimeout(timer);
+    this.wake = null;
+  }
+
+  /** Reading resumed, or the model to be tried again: looked at now. */
+  resume(): void {
+    this.poke();
+  }
+
+  /** How long a file of its kind took (not counting waits). */
+  private learn(row: FileRow, seconds: number): void {
+    const speed = this.speed.get(row.kind) ?? { seconds: 0, bytes: 0, files: 0 };
+    this.speed.set(row.kind, { seconds: speed.seconds + seconds, bytes: speed.bytes + row.size, files: speed.files + 1 });
+  }
+
+  /** Seconds left for what waits, from the speeds so far: null until enough is read to tell. */
+  estimate(waiting: FileRow[]): number | null {
+    const all = [...this.speed.values()].reduce((a, s) => ({ seconds: a.seconds + s.seconds, files: a.files + s.files }),
+                                                { seconds: 0, files: 0 });
+    if (all.files < TELLS.files || all.seconds < TELLS.seconds) return null;
+    let left = 0;
+    for (const row of waiting) {
+      const speed = this.speed.get(row.kind);
+      if (!speed || speed.files < 2) left += all.seconds / all.files;   // a kind not read yet: the files' mean
+      else if (PER_FILE.has(row.kind) || !speed.bytes) left += speed.seconds / speed.files;
+      else left += (row.size * speed.seconds) / speed.bytes;
+    }
+    return left;
   }
 
   private media(): MediaOptions {
@@ -223,6 +293,7 @@ export class Indexer {
       else if (row.kind === "video") await this.readVideo(row);
       else await this.readText(row);
     } catch (error) {
+      if (error instanceof ModelMissing) throw error;   // not the file's fault: it waits
       const latest = await this.store.file(row.path);
       if (latest && latest.mtime === row.mtime) {
         await this.store.putFile({ ...latest, state: "failed", detail: error instanceof Error ? error.message : String(error) });
@@ -386,7 +457,16 @@ export class Indexer {
       let vector: ArrayBuffer | null = null;
       const modality = modalityOf(piece);
       if (modality !== "none") {
-        model ??= await this.options.embed();
+        if (!model) {
+          const asked = performance.now();   // (loading the model isn't reading this file)
+          try {
+            model = await this.options.embed();
+          } catch (error) {
+            throw new ModelMissing(error instanceof Error ? error.message : String(error));
+          } finally {
+            this.waited += performance.now() - asked;
+          }
+        }
         const [made] = piece.text !== null ? await model.texts([piece.text])
           : piece.picture ? await model.images([piece.picture]) : await model.audio([piece.sound!]);
         vector = toHalf(made);

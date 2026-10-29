@@ -2,6 +2,7 @@
   // The Dowse tab: the vault searched by what's in it. Before a search, the wall holds the vault's latest files; a
   // search gathers clear matches in front of them (the fisheye wall) or lists them, with the words found. Or the whole
   // vault on Explore's floor, in aisles of files that are alike, where a search shows what it found where it stands.
+  // Before Dowse is on here, what turning it on does; while a lot is being read, how far it is and how long is left.
   import { onMount } from "svelte";
   import Wall from "./wall/Wall.svelte";
   import Icon from "./wall/Icon.svelte";
@@ -13,6 +14,8 @@
   import { folderOf, nameOf, pieceOf, shownOf, VISUAL, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
   import type { Answer } from "../plugin/search.ts";
+  import { heldText, timeLeft } from "../plugin/status.ts";
+  import { dragLink } from "./drag.ts";
 
   let { controller, initial = "" }: { controller: Controller; initial?: string } = $props();
 
@@ -33,10 +36,15 @@
   let busy = $state(false);
   // svelte-ignore state_referenced_locally
   let on = $state(controller.on());   // (the controller stays the same; these follow it by subscription)
+  const own = (text: string) => text.replace(/^Dowse · /, "");   // (in Dowse's own tab, its name goes without saying)
   // svelte-ignore state_referenced_locally
-  let status = $state(controller.status());
+  let status = $state(own(controller.status()));
   // svelte-ignore state_referenced_locally
   let dark = $state(controller.dark());
+  // svelte-ignore state_referenced_locally
+  let reading = $state(controller.reading());
+  // svelte-ignore state_referenced_locally
+  const counts = controller.counts();   // (for the first screen)
   let input = $state<HTMLInputElement>();
   let map = $state<ExploreMap | null>(null);
   let chosen = $state<string | null>(null);   // the case picked on the floor
@@ -74,15 +82,37 @@
   const scores = $derived(found ? new Map(ranked.map((h) => [h.path, h.score ?? 0])) : null);
   const matches = $derived(new Set(hits.slice(0, answer?.strong ?? 0).map((h) => h.path)));
 
+  // Reading a lot (the first time, or images turned on): how far, how long is left, and pausing it
+  const strip = $derived.by(() => {
+    const r = reading;
+    if (r.model === "downloading") return { text: `Downloading the search model · ${Math.round((r.progress ?? 0) * 100)}%`,
+                                            part: r.progress ?? 0, note: "Once, for all your vaults." };
+    if (r.model === "failed" || r.held === "the model couldn't start") return { text: "The search model couldn't start",
+      part: null, note: `${r.error ?? "No connection?"} Dowse tries again every 2 minutes; meanwhile files are found by name.`, retry: true };
+    const left = r.total - r.done;
+    if (r.state === "paused") return { text: `${cap(heldText(r.held))} · ${left.toLocaleString()} files to read`,
+                                       part: r.total ? r.done / r.total : 0, note: "", resume: r.paused };
+    if ((r.state === "reading" || r.state === "waiting") && left >= 5) {
+      const time = timeLeft(r.left);
+      return { text: `Reading the vault · ${Math.min(r.done + 1, r.total).toLocaleString()} of ${r.total.toLocaleString()}` +
+                     (time ? ` · ${time}` : ""), part: r.total ? r.done / r.total : 0,
+               note: "Search works on what's read so far; the rest is found by name.", pause: true };
+    }
+    return null;
+  });
+  const cap = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
+  const many = (n: number | undefined, one: string, more: string) => `${(n ?? 0).toLocaleString()} ${n === 1 ? one : more}`;
+
   const summary = $derived.by(() => {
     if (!on) return "";
     if (layout === "map" && !searching) {
       if (!map) return "Laying out the vault…";
       const named = map.aisles.some((a) => !a.label.startsWith("Aisle "));
       return `${map.total.toLocaleString()} files in ${map.aisles.length} aisle${map.aisles.length === 1 ? "" : "s"}, ` +
-        `grouped by what's in them${named || !map.aisles.length ? "" : " (named once the model has started)"} · ${status}`;
+        `grouped by what's in them${named || !map.aisles.length ? "" : " (named once the model has started)"}` +
+        (strip ? "" : ` · ${status}`);
     }
-    if (!searching) return status;
+    if (!searching) return strip ? "" : cap(status);
     if (busy && !answer) return "Searching…";
     if (!answer) return "";
     const matches = answer.strong;
@@ -165,18 +195,21 @@
     if (query.trim()) void run();
     let lastReady = controller.ready();
     const stop = controller.subscribe(() => {
+      const wasOn = on;
       on = controller.on();
-      status = controller.status();
+      status = own(controller.status());
       dark = controller.dark();
+      reading = controller.reading();
+      if (on && !wasOn) { void loadRecent(); if (layout === "map") void loadMap(); }   // just turned on: the files listed
       const ready = controller.ready();
       if (ready && !lastReady && answer && !answer.meaning) void run();   // the model came: by meaning now
       lastReady = ready;
     });
-    const refresh = window.setInterval(() => {
+    const unfollow = controller.follow(() => {   // remade in the background as the vault is read (not polled)
       if (!searching) void loadRecent();
-      if (layout === "map") void loadMap();   // remade in the background as the vault is read; the last one meanwhile
-    }, 10000);
-    return () => { stop(); window.clearInterval(refresh); window.clearTimeout(timer); };
+      if (layout === "map") void loadMap();
+    });
+    return () => { stop(); unfollow(); window.clearTimeout(timer); };
   });
 </script>
 
@@ -186,8 +219,17 @@
       <h2>Search this vault by what's in it</h2>
       <p>Describe a note, a PDF or a canvas in your own words, in any of 100+ languages: Dowse finds it, at the right
         line or page. Everything stays on this computer.</p>
-      <p class="dowse-quiet">Turning it on downloads the search model (542 MB, from Hugging Face), once for all your vaults.</p>
+      <ol class="dowse-steps">
+        <li><b>It downloads its search model</b>, once for all your vaults: 542 MB, from Hugging Face.</li>
+        <li><b>It reads this vault in the background</b>: {many(counts.note, "note", "notes")},
+          {many(counts.pdf, "PDF", "PDFs")} and {many(counts.canvas, "canvas", "canvases")}. You can keep working, search
+          what's read so far, and pause it.</li>
+        <li><b>Then it keeps up as you write.</b> Images, recordings and videos are found by name; Settings › Dowse can
+          read what's in them too.</li>
+      </ol>
       <button class="mod-cta" onclick={() => controller.turnOn()}>Turn on for this vault</button>
+      <p class="dowse-quiet">Folders and files can be left out (right-click, “Dowse: stop searching”), and Dowse turned
+        off or its index deleted in Settings › Dowse.</p>
     </div>
   {:else}
     <div class="dowse-head">
@@ -215,6 +257,18 @@
           {/if}
         </div>
       </div>
+      {#if strip}
+        <div class="dowse-strip" role="status">
+          <div class="dowse-strip-text">
+            <span>{strip.text}</span>
+            {#if strip.note}<span class="dowse-quiet">{strip.note}</span>{/if}
+          </div>
+          {#if strip.retry}<button onclick={() => controller.retry()}>Try again</button>
+          {:else if strip.resume}<button onclick={() => controller.pause(false)}>Resume</button>
+          {:else if strip.pause}<button onclick={() => controller.pause(true)}>Pause</button>{/if}
+          {#if strip.part !== null}<div class="dowse-strip-bar" style:--part={strip.part}></div>{/if}
+        </div>
+      {/if}
       <div class="dowse-summary" aria-live="polite">{summary}</div>
     </div>
     <div class="dowse-body" class:dowse-floor={layout === "map"}>
@@ -225,7 +279,8 @@
                     picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px, [])}
                     onselect={(piece) => (chosen = piece.path)}
                     onopen={(piece) => controller.open(shownFor(piece.path), false)}
-                    onhover={(event, piece, target) => controller.hover(event, piece.path, target)} />
+                    onhover={(event, piece, target) => controller.hover(event, piece.path, target)}
+                    ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)} />
         {:else if map}
           <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
         {/if}
@@ -233,7 +288,8 @@
         <Wall {pieces} collectionKeys={recent.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
               terms={answer?.terms ?? []} {searching} {clear} {dark}
               picture={(piece, px, terms) => controller.picture(piece, px, terms)}
-              onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item) controller.open(item, false); }} />
+              onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item) controller.open(item, false); }}
+              ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
         <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)} />
       {:else if searching && answer && !busy}

@@ -5,9 +5,7 @@
 import "./web-only.ts";   // first: a plain web worker, before transformers.js looks at where it is
 import { AutoConfig, AutoModel, AutoProcessor, RawImage, env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-web/webgpu";   // the same runtime transformers.js uses: its settings are these
-import type { Answer, Picture, Request } from "./protocol.ts";
-
-const MODEL = "onnx-community/embeddinggemma-2-ONNX";
+import { MODEL_REPO as MODEL, type Answer, type Picture, type Request } from "./protocol.ts";
 
 let processor: any = null;
 let model: any = null;

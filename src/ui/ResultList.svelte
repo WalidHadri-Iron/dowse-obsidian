@@ -1,15 +1,17 @@
 <script lang="ts">
   // Results as a list, as Obsidian lists files: the kind's icon, the title, where it matched, the words found.
+  import type { Snippet } from "svelte";
   import Icon from "./wall/Icon.svelte";
   import { KIND_ICON, lineOf, runs, titleOf, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
 
-  let { items, selected = -1, compact = false, controller, onselect }: {
+  let { items, selected = -1, compact = false, controller, onselect, aside }: {
     items: Shown[];
     selected?: number;
     compact?: boolean;       // the sidebar's: no excerpts
     controller: Controller;
     onselect?: (index: number) => void;
+    aside?: Snippet<[Shown]>;   // at the row's end (the sidebar's: linked, or a button to link it)
   } = $props();
 
   let list: HTMLElement;
@@ -45,6 +47,7 @@
           </div>
         {/if}
       </div>
+      {#if aside}<div class="dowse-result-aside">{@render aside(item)}</div>{/if}
     </div>
   {/each}
 </div>

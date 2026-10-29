@@ -27,3 +27,22 @@ Reading a vault, on this PC's two GPUs (2026-10-29: 44 notes of Obsidian's help,
 
 On Windows, Chromium ignores WebGPU's "high-performance" choice: Obsidian gets the GPU Windows assigns it
 (Settings › System › Display › Graphics).
+
+## Obsidian's start
+
+Obsidian reads and evaluates all of main.js at every start, in every vault, Dowse on or off. Measured 2026-10-29 in
+Obsidian 1.14.5 (`app.plugins.enablePlugin`, the median of 9, `scripts/obsidian-run.mjs --eval`): an empty plugin
+1 ms; the plugin without the ONNX runtime's WebAssembly 9–11 ms; with it gzipped (10.2 MB main.js) 45–50 ms; the
+same with the engine's parts inside functions V8 only skims 44 ms (no gain: reading and scanning the text is the
+cost); with the WebAssembly packed with xz (6.4 MB main.js) **26 ms**. Unpacking xz when the model loads takes
+0.26 s against gzip's 0.10 (Node), once per model start, which takes seconds anyway.
+
+The q4 build for PCs without WebGPU (asked again): it can't, as measured above (no GatherBlockQuantized on the
+processor, and its vectors would be another space than an index read on a GPU).
+
+## The time left
+
+Told from how fast this computer has read each kind of file so far (`Indexer.estimate`). Reading Obsidian's help and
+the test notes (280 files, 1,741 passages) on the RTX 4070 Ti, 2026-10-29: first told after 8.6 s, 54 s left
+(31 s were); then 33 s for 25, 19 s for 17, 7 s for 9. High at first (the first files include the model's warm-up),
+right within seconds after; shown rounded ("less than a minute left", "about 6 min left").

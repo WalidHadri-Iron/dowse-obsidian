@@ -4,6 +4,7 @@
 import workerSource from "inline:worker";
 import wasmPacked from "inline:ort-wasm";
 import glue from "inline:ort-glue";
+import { XzReadableStream } from "xz-decompress";
 import type { Answer, Dtype, Parts, Picture, Request } from "./protocol.ts";
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
@@ -11,8 +12,7 @@ type Ask<T> = T extends unknown ? Omit<T, "id"> : never;
 
 async function unpack(base64: string): Promise<ArrayBuffer> {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Response(stream).arrayBuffer();
+  return new Response(new XzReadableStream(new Blob([bytes]).stream())).arrayBuffer();   // (a quarter second)
 }
 
 export class Model {
@@ -28,7 +28,7 @@ export class Model {
 
   constructor(onProgress: (file: string, loaded: number, total: number) => void = () => {}) {
     this.onProgress = onProgress;
-    this.url = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+    this.url = URL.createObjectURL(new Blob([workerSource()], { type: "text/javascript" }));
     this.worker = new Worker(this.url, { type: "module" });
     this.worker.onmessage = (event: MessageEvent<Answer>) => this.answer(event.data);
     this.worker.onerror = (event) => this.failAll(new Error(event.message || "the model's worker stopped"));
@@ -58,9 +58,9 @@ export class Model {
 
   /** Loads the model (downloaded the first time); answers where it runs: "webgpu" or "wasm" (the processor). */
   async load(dtype: Dtype, device: "auto" | "wasm" = "auto", parts: Parts = { image: true, audio: true }): Promise<string> {
-    const wasmBinary = await unpack(wasmPacked);
+    const wasmBinary = await unpack(wasmPacked());
     const answer = await this.ask<{ device: string; gpu: string | null }>(
-      { op: "load", dtype, device, parts, wasmBinary, glue }, [wasmBinary]);
+      { op: "load", dtype, device, parts, wasmBinary, glue: glue() }, [wasmBinary]);
     this.parts = parts;
     this.device = answer.device;
     this.gpu = answer.gpu;

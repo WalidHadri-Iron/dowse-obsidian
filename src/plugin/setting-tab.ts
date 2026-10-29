@@ -1,5 +1,6 @@
 // Settings › Dowse: turning it on for this vault (what that downloads, said first), and once on, where the model runs,
-// how far reading is, and what's turned off.
+// how far reading is (pausing it), what's turned off, and the room Dowse takes on this computer (the model can be
+// removed: it stays in Obsidian's cache otherwise, even once the plugin is gone).
 
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
@@ -7,6 +8,8 @@ import { DTYPE } from "./engine.ts";
 import { isOn, plainExclusions } from "./settings.ts";
 import { kindOf } from "../engine/reading/types.ts";
 import { prefer, preferred, situation } from "./graphics.ts";
+import { sizeText } from "./disk.ts";
+import { heldText, readingText } from "./status.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
@@ -54,27 +57,62 @@ export class DowseSettingTab extends PluginSettingTab {
   }
 
   private statusEl: HTMLElement | null = null;
+  private retryEl: HTMLElement | null = null;
+  private indexEl: Setting | null = null;
+  private modelEl: Setting | null = null;
+  private removeButton: { setDisabled(disabled: boolean): unknown } | null = null;
 
   private refreshStatus(): void {
     if (!this.statusEl || !this.plugin.engine) return;
     const { model, status } = this.plugin.engine;
     const where = model.state !== "ready" ? { asleep: "asleep (it wakes when there's something to read)",
       downloading: `downloading, ${Math.round((model.progress ?? 0) * 100)}%`, loading: "starting",
-      failed: `couldn't start: ${model.error}`, ready: "" }[model.state]
+      failed: `couldn't start: ${model.error}. Dowse tries again every 2 minutes`, ready: "" }[model.state]
       : model.device === "webgpu" ? `on the graphics card (WebGPU${model.gpu ? `: ${model.gpu}` : ""})`
       : "on the processor (no WebGPU here: slower)";
     const reading = status.state === "idle" ? "Up to date" : status.state === "waiting" ? "Waiting while you type"
-      : `Reading ${Math.min(status.done + 1, status.total)} of ${status.total}`;
+      : status.state === "paused" ? `${heldText(status.held)[0].toUpperCase()}${heldText(status.held).slice(1)}`
+      : `${readingText(status)[0].toUpperCase()}${readingText(status).slice(1)}`;
     this.statusEl.setText(`Model: ${where}. ${reading}.` + (status.failed ? ` ${status.failed} couldn't be read.` : ""));
+    this.retryEl?.toggle(model.state === "failed" || status.held === "the model couldn't start");
+    this.showDisk();
+  }
+
+  /** The room Dowse takes, as the engine last measured it (Settings never reads storage itself: see `Engine.disk`). */
+  private showDisk(): void {
+    const disk = this.plugin.engine?.disk;
+    this.indexEl?.setDesc(!disk ? "Measured once reading is done." :
+      `${disk.files.toLocaleString()} files, ${disk.passages.toLocaleString()} passages: about ${sizeText(disk.bytes)}, ` +
+      `in Obsidian's own storage on this computer (not in the vault, so it isn't synced).`);
+    this.modelEl?.setDesc(!disk ? "Measured once reading is done." : disk.model ? `${sizeText(disk.model)} in ` +
+      `Obsidian's cache, for all your vaults. It stays there if you remove the plugin: remove it here first. Vaults ` +
+      `where Dowse is on download it again when they next need it.` : "Not downloaded on this computer.");
+    this.removeButton?.setDisabled(!disk?.model);
   }
 
   private onView(el: HTMLElement): void {
-    this.statusEl = el.createEl("p", { cls: "dowse-settings-status" });
+    const top = el.createDiv({ cls: "dowse-settings-top" });
+    this.statusEl = top.createEl("p", { cls: "dowse-settings-status" });
+    this.retryEl = top.createEl("button", { text: "Try again" });
+    this.retryEl.onclick = () => this.plugin.engine?.retry();
     this.refreshStatus();
 
     this.graphics(el.createDiv());
 
-    el.createEl("h3", { text: "Pictures and sound" });
+    new Setting(el).setName("Reading").setHeading();
+    new Setting(el).setName("Pause reading")
+      .setDesc("Until you resume it, or Obsidian starts again. Search still works on what's read; the status bar's " +
+        "menu pauses and resumes too.")
+      .addToggle((toggle) => toggle.setValue(this.plugin.paused).onChange((paused) => this.plugin.setPaused(paused)));
+    new Setting(el).setName("Pause on battery")
+      .setDesc("Reading waits while this computer runs on its battery, and goes on once it's plugged in.")
+      .addToggle((toggle) => toggle.setValue(this.plugin.settings.batteryPause).onChange(async (on) => {
+        this.plugin.settings.batteryPause = on;
+        await this.plugin.save();
+        this.plugin.setPaused(this.plugin.paused);   // (looked at again now)
+      }));
+
+    new Setting(el).setName("Pictures and sound").setHeading();
     const counts = { image: 0, audio: 0, video: 0, pdf: 0 } as Record<string, number>;
     for (const file of this.app.vault.getFiles()) {
       const kind = kindOf(file.path);
@@ -94,7 +132,7 @@ export class DowseSettingTab extends PluginSettingTab {
       .addToggle((toggle) => toggle.setValue(this.plugin.settings.sound)
         .onChange(async (on) => { await this.plugin.setParts({ sound: on }); this.refreshStatus(); }));
 
-    el.createEl("h3", { text: "What's searched" });
+    new Setting(el).setName("What's searched").setHeading();
     el.createEl("p", { cls: "setting-item-description", text: "The whole vault, except what you turn off: " +
       "right-click a folder or file and choose “Dowse: stop searching”. What's turned off keeps what was " +
       "read of it, so turning it back on is instant." });
@@ -117,7 +155,10 @@ export class DowseSettingTab extends PluginSettingTab {
         }));
     }
 
-    el.createEl("h3", { text: "This vault's index" });
+    new Setting(el).setName("On this computer").setHeading();
+    this.indexEl = new Setting(el).setName("This vault's index");
+    this.modelSetting(el);
+    this.showDisk();
     new Setting(el).setName("Read everything again")
       .setDesc("Clears this vault's index and reads the vault again from the start.")
       .addButton((button) => button.setButtonText("Read again").onClick(async () => {
@@ -137,6 +178,30 @@ export class DowseSettingTab extends PluginSettingTab {
       }));
 
     el.createEl("p", { cls: "setting-item-description", text: `Model build: ${DTYPE}.` });
+  }
+
+  /** The model's files on this computer, and removing them (two clicks: the second within a few seconds). */
+  private modelSetting(el: HTMLElement): void {
+    this.modelEl = new Setting(el).setName("The search model");
+    let armed = 0;
+    this.modelEl.addButton((button) => {
+      this.removeButton = button;
+      const reset = () => { button.setButtonText("Remove from this computer"); button.buttonEl.removeClass("mod-warning"); };
+      reset();
+      button.onClick(async () => {
+        if (!armed) {
+          button.setButtonText("Click again to remove").setWarning();
+          armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
+          return;
+        }
+        window.clearTimeout(armed);
+        armed = 0;
+        reset();
+        button.setDisabled(true);
+        const freed = await this.plugin.engine?.removeModel() ?? 0;   // (shown again through onChange)
+        new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
+      });
+    });
   }
 
   /** A PC with a graphics card and an integrated GPU: run Obsidian on the card (Windows' own preference for it). Only

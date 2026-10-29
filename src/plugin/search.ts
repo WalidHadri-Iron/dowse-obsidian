@@ -13,6 +13,8 @@ import type { Model } from "../engine/model.ts";
 import type { Shown } from "../ui/results.ts";
 
 export const REFRESH_MS = 3000;   // between searchers built while the index keeps changing
+export const FOLLOW_MS = 10000;   // between files shown again while a view is open and the vault is being read
+export const MAP_REFRESH_MS = 30000;   // between maps made while the vault is being read (as Dowse's)
 
 export interface Answer {
   query: string;
@@ -32,6 +34,12 @@ export function nameWords(path: string, info: Record<string, unknown>): string {
   return [stem, ...parts.slice(-3), ...labels].join(" ").replace(/[_-]/g, " ");
 }
 
+/** Who's shown the index: whether a view is open, and how to tell them something new was made. */
+export interface Follower {
+  wanted: () => boolean;
+  made: () => void;
+}
+
 export class VaultSearch {
   private store: Store;
   private model: { ready: () => Model | null; wake: () => void };
@@ -43,9 +51,11 @@ export class VaultSearch {
   private bank: Float32Array[] | null = null;
   private latest: Shown[] = [];   // the vault's files, most recently changed first (the wall's rack)
   private mapFiles: MapFile[] = [];   // what Explore lays out (from the same read of the index)
-  private map: { made: ExploreMap; of: number; named: boolean } | null = null;
+  private map: { made: ExploreMap; of: number; at: number; named: boolean } | null = null;
   private mapping: Promise<ExploreMap> | null = null;
   private words: Float32Array[] | null = null;
+  private follower: Follower | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   /** `active`: whether a file is searched (not turned off: what's turned off keeps its index, and isn't found). */
   constructor(store: Store, model: { ready: () => Model | null; wake: () => void }, active: (path: string) => boolean) {
@@ -54,9 +64,47 @@ export class VaultSearch {
     this.active = active;
   }
 
-  /** The index changed: the next search (or the background) builds a fresh searcher. */
+  /** The index changed: the next search (or the background, while a view is open) builds a fresh searcher. */
   changed(): void {
     this.stale = true;
+    this.schedule();
+  }
+
+  /** What the views show (the latest files, the map) is made again in the background while one is open, and
+   * `made` says so: nothing is made while no view is open, nor polled while nothing changes. */
+  follow(follower: Follower): void {
+    this.follower = follower;
+  }
+
+  close(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.follower = null;
+  }
+
+  private schedule(): void {
+    if (this.timer || !this.follower?.wanted()) return;
+    this.timer = setTimeout(() => void this.refresh(), Math.max(0, this.builtAt + FOLLOW_MS - Date.now()));
+  }
+
+  private async refresh(): Promise<void> {
+    this.timer = null;
+    if (!this.follower?.wanted()) return;
+    if (this.stale) {
+      await this.current();
+      this.follower?.made();
+    }
+    const map = this.map;
+    if (map && map.of !== this.builtAt) {   // the map someone looked at: made again, at most every MAP_REFRESH_MS
+      const wait = map.at + MAP_REFRESH_MS - Date.now();
+      if (wait > 0) {
+        this.timer = setTimeout(() => void this.refresh(), wait);
+        return;
+      }
+      await this.explore();
+      await this.mapping;
+    }
+    if (this.stale) this.schedule();
   }
 
   private async build(): Promise<Searcher> {
@@ -129,19 +177,21 @@ export class VaultSearch {
              meaning: vector !== null, ms: performance.now() - started };
   }
 
-  /** Explore's map. Remade in the background once the index has changed (the last one is shown meanwhile), and
-   * once the model can name its aisles; only the first waits. */
+  /** Explore's map. Remade in the background once the index has changed (at most every MAP_REFRESH_MS: the last
+   * one is shown meanwhile), and once the model can name its aisles; only the first waits. */
   async explore(): Promise<ExploreMap> {
     await this.current();
     const model = this.model.ready();
-    const due = !this.map || this.map.of !== this.builtAt || (!this.map.named && (model || this.words));
+    const due = !this.map || (this.map.of !== this.builtAt && Date.now() - this.map.at >= MAP_REFRESH_MS)
+      || (!this.map.named && (model || this.words));
     if (due && !this.mapping) {
       this.mapping = (async () => {
         try {
           const of = this.builtAt, files = this.mapFiles;
           this.words ??= await wordVectors(this.store, model ? (prompts) => model.texts(prompts) : null).catch(() => null);
           const made = await buildMap(files, this.words);
-          this.map = { made, of, named: this.words !== null };
+          this.map = { made, of, at: Date.now(), named: this.words !== null };
+          this.follower?.made();   // (a map made again, or named once the model came)
           return made;
         } finally {
           this.mapping = null;

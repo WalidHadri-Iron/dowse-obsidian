@@ -93,12 +93,39 @@
 .dowse-off p { margin: 0; color: var(--text-muted); line-height: 1.5; }
 .dowse-off .dowse-quiet { font-size: var(--font-ui-smaller); color: var(--text-faint); }
 .dowse-off button { align-self: flex-start; }
+.dowse-steps { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: var(--s-2);
+  color: var(--text-muted); line-height: 1.5; }
+.dowse-steps b { color: var(--text-normal); font-weight: var(--font-semibold); }
+
+/* Reading a lot: how far, how long is left, pause */
+.dowse-strip { position: relative; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-m); background: var(--background-secondary); overflow: hidden; }
+.dowse-strip-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: var(--font-ui-small);
+  color: var(--text-normal); font-variant-numeric: tabular-nums; }
+.dowse-strip-text .dowse-quiet { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.dowse-strip button { flex: none; }
+.dowse-strip-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: calc(var(--part) * 100%);
+  background: var(--interactive-accent); transition: width 400ms ease; }
+
+/* "Like this note": whether each is linked yet, and linking it */
+.dowse-similar-filter { display: flex; gap: var(--s-1); padding: var(--s-2) var(--s-3) 0; }
+.dowse-result-aside { margin-left: auto; align-self: center; flex: none; display: flex; color: var(--text-faint); }
+.dowse-result .dowse-link-button { opacity: 0; height: auto; padding: 2px 6px; font-size: var(--font-ui-smaller);
+  box-shadow: none; }
+.dowse-result:hover .dowse-link-button, .dowse-result.is-selected .dowse-link-button,
+.dowse-link-button:focus-visible { opacity: 1; }
+
+/* A file dragged from the wall or the map into a note */
+.dowse-drag-ghost { position: fixed; top: -100px; left: 0; padding: 4px 10px; border-radius: var(--radius-s);
+  background: var(--background-primary); color: var(--text-normal); border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s); font-size: var(--font-ui-small); white-space: nowrap; pointer-events: none; }
 
 .dowse-similar { display: flex; flex-direction: column; }
 .dowse-similar-head { padding: var(--s-2) var(--s-3) 0; font-size: var(--font-ui-smaller); color: var(--text-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dowse-sidebar.view-content { overflow: auto; }
 
-.dowse-settings-status { padding: var(--size-4-2) var(--size-4-3); border-radius: var(--radius-m);
-  background: var(--background-secondary); }
+.dowse-settings-top { display: flex; align-items: center; gap: var(--size-4-3); padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-m); background: var(--background-secondary); }
+.dowse-settings-status { flex: 1; margin: 0; }
 .dowse-status { cursor: pointer; }

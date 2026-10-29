@@ -39,7 +39,7 @@
   import { exploreAppearance, fitExplore } from "./explore-view.ts";
 
   let { pieces, aisles, found = null, scores = null, clear = true, matches = null, selected = null, dark = false,
-        picture, onselect, onopen, onhover }: {
+        picture, onselect, onopen, onhover, ondragout }: {
     pieces: MapPiece[];
     aisles: MapAisle[];
     found?: Map<string, number> | null;   // path → rank, while a search is on
@@ -54,6 +54,8 @@
     onopen: (piece: MapPiece) => void;
     /** The pointer rests on a case (Obsidian's hover preview, with the modifier key). */
     onhover?: (event: MouseEvent, piece: MapPiece, target: HTMLElement) => void;
+    /** The case picked dragged out, into a note: dragging any other case, or the floor, walks. */
+    ondragout?: (piece: MapPiece, event: DragEvent) => void;
   } = $props();
 
   let host: HTMLDivElement;
@@ -435,17 +437,21 @@
     return best;
   }
 
-  let drag: { x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
+  let drag: { x: number; y: number; vx: number; vy: number; moved: boolean; link: MapPiece | null } | null = null;
 
   function down(event: PointerEvent): void {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
     host.focus({preventScroll: true});
-    drag = { x: event.clientX, y: event.clientY, vx: viewTo.x, vy: viewTo.y, moved: false };
-    host.setPointerCapture(event.pointerId);
+    const at = ondragout && selected ? caseAt(event) : null;
+    const link = at && at.piece.path === selected ? at.piece : null;   // the picked case: the browser's drag, into a note
+    drag = { x: event.clientX, y: event.clientY, vx: viewTo.x, vy: viewTo.y, moved: false, link };
+    host.draggable = Boolean(link);
+    if (!link) host.setPointerCapture(event.pointerId);
   }
   function move(event: PointerEvent): void {
     const badge = (event.target as HTMLElement).closest<HTMLButtonElement>(".rank-badge");
     if (badge) { hovered = byPath.get(badge.dataset.path!) ?? null; wake(); return; }
+    if (drag?.link) return;
     if (drag) {
       const perPixel = (2 * view.z * Math.tan((camera.fov * Math.PI) / 360)) / host.clientHeight;
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
@@ -463,6 +469,7 @@
     if (!drag) return;
     const moved = drag?.moved;
     drag = null;
+    host.draggable = false;
     if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
     if (!moved) {
       const at = caseAt(event);
@@ -611,7 +618,10 @@
 <div class="map-view">
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div class="floor" bind:this={host} role="application" aria-label="Explore map · {pieces.length} files" tabindex="0" onpointerdown={down} onpointermove={move} onpointerup={up}
-     onpointerleave={() => { hovered = null; wake(); }} onwheel={wheel} onkeydown={key}>
+     onpointerleave={() => { hovered = null; wake(); }} onwheel={wheel} onkeydown={key}
+     onpointercancel={() => { if (!drag?.link) { drag = null; host.draggable = false; } }}
+     ondragstart={(event) => { if (drag?.link) ondragout?.(drag.link, event); else event.preventDefault(); }}
+     ondragend={() => { drag = null; host.draggable = false; }}>
   <div class="signs" bind:this={signLayer}></div>
   <div class="tags" bind:this={tagLayer} aria-hidden="true"></div>
   <div class="ranks" bind:this={rankLayer}></div>
@@ -626,18 +636,20 @@
       {#if found.size}<span class="size-note">Numbers = rank · Alt+↑/↓</span>{/if}
     </div>
   {:else}
-    <div class="relevance-key"><span class="size-note">Scroll to come closer · drag to walk · a sign takes you to its aisle · double-click opens</span></div>
+    <div class="relevance-key"><span class="size-note">Scroll to come closer · drag to walk · a sign takes you to its aisle · double-click opens{ondragout ? " · drag a picked file into a note to link it" : ""}</span></div>
   {/if}
 </div>
 
 <style>
-  .map-view { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; height: 100%; }
+  /* The key above the floor, as on the wall: Obsidian's status bar floats over the bottom of a view */
+  .map-view { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; height: 100%; }
+  .map-view > .relevance-key { order: -1; }
   .floor { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: grab; touch-action: none; }
   .floor :global(canvas) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .signs, .tags, .ranks { position: absolute; inset: 0; pointer-events: none; }
   .relevance-key { display: flex; flex-wrap: wrap;
                    gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3); color: var(--ink-2);
-                   background: var(--floor-raised); border-top: 1px solid var(--hairline);
+                   background: var(--floor-raised); border-bottom: 1px solid var(--hairline);
                    font-size: var(--text-xs); pointer-events: none; }
   .relevance-key span { display: flex; align-items: center; gap: var(--s-2); }
   .relevance-key span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }

@@ -7,9 +7,10 @@
 // `dev` adds the development hooks (src/dev): the reference measurement (Dowse's reference inputs and vectors, checked
 // inside Obsidian) and a test vault's requests (scripts/obsidian-run.mjs).
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { execFileSync } from "node:child_process";
 import { builtinModules } from "node:module";
 import esbuild from "esbuild";
 import sveltePlugin from "esbuild-svelte";
@@ -18,11 +19,19 @@ const production = process.argv.includes("production");
 const dev = process.argv.includes("dev");
 
 // The ONNX runtime transformers.js was built against (its own copy if it has one): its WebAssembly and the script
-// that loads it, the build transformers.js asks for (asyncify: WebGPU and the processor in one)
+// that loads it, the build transformers.js asks for (asyncify: WebGPU and the processor in one). The WebAssembly is
+// packed with xz (the `xz` command): 3.7 MB against gzip's 6.6, and Obsidian reads all of main.js at every start
+// (measurements/README.md)
 const transformers = join("node_modules", "@huggingface", "transformers");
 const ort = [join(transformers, "node_modules", "onnxruntime-web", "dist"), join("node_modules", "onnxruntime-web", "dist")]
   .find((folder) => existsSync(join(folder, "ort-wasm-simd-threaded.asyncify.wasm")));
-const wasm = gzipSync(readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.wasm")), { level: 9 }).toString("base64");
+const runtime = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.wasm"));
+const packed = join(".cache", `ort-wasm-${createHash("sha256").update(runtime).digest("hex").slice(0, 16)}.xz`);   // (9 s)
+if (!existsSync(packed)) {
+  mkdirSync(".cache", { recursive: true });
+  writeFileSync(packed, execFileSync("xz", ["-9e", "--stdout"], { input: runtime, maxBuffer: 1 << 30 }));
+}
+const wasm = readFileSync(packed).toString("base64");
 const glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf8");
 
 const worker = await esbuild.build({
@@ -46,7 +55,8 @@ const inlined = {
     };
     build.onResolve({ filter: /^inline:/ }, (args) => ({ path: args.path, namespace: "inline" }));
     build.onLoad({ filter: /.*/, namespace: "inline" }, (args) => ({
-      contents: `export default ${JSON.stringify(sources[args.path])};`, loader: "js",
+      // a function: V8 only skims a function's body until it's called, so Obsidian's start doesn't pay for the text
+      contents: `export default function() { return ${JSON.stringify(sources[args.path])}; }`, loader: "js",
     }));
   },
 };

@@ -23,7 +23,7 @@
 
   let {
     pieces, collectionKeys = [], selected = 0, terms = [], searching = false, clear = true, active = true, onselect, onopen,
-    picture, dark = false,
+    picture, dark = false, ondragout,
   }: {
     pieces: Piece[];
     collectionKeys?: string[]; // stable file order: a search highlights the rack instead of replacing it
@@ -37,7 +37,12 @@
     /** A piece's picture as a URL (a vault file, a rendered PDF page), or null: its face is drawn instead. */
     picture: (piece: Piece, pixels: number, terms: string[]) => Promise<string | null>;
     dark?: boolean;
+    /** The case picked (clicked, or selected) dragged out, into a note: dragging any other case, or between them,
+     *  moves the wall. */
+    ondragout?: (index: number, event: DragEvent) => void;
   } = $props();
+  let picked = -1;      // the case last clicked
+  let linking = -1;     // a drag begun on the picked case: the browser's own (into a note), not moving the wall
 
   let host: HTMLDivElement;
   let tagLayer: HTMLDivElement;
@@ -465,18 +470,25 @@
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0 || (event.target as HTMLElement).closest(".zoom-controls")) return;
     host.focus({ preventScroll: true });
+    const index = ondragout ? hit(event) : -1;
+    if (index >= 0 && (index === selected || index === picked)) {
+      linking = index;
+      host.draggable = true;
+      return;
+    }
     dragging = { x: event.clientX, y: event.clientY, panX: panTo.x, panY: panTo.y, moved: false };
     host.setPointerCapture(event.pointerId);
   }
 
   function onPointerUp(event: PointerEvent): void {
+    if (linking >= 0) { linking = -1; host.draggable = false; return; }
     if (!dragging) return;
     const moved = dragging?.moved;
     dragging = null;
     if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
     if (!moved) {
       const index = hit(event);
-      if (index >= 0) onselect(index);
+      if (index >= 0) { picked = index; onselect(index); }
     }
   }
 
@@ -696,14 +708,16 @@
       {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Other candidates · sharp</span>{/if}
       <span class="other">Other files · softened</span>
       {#if clear && pieces.some((piece) => !piece.back)}<span class="size-note">Larger = stronger match</span>{/if}
-    {:else}<span class="navigation">Scroll to zoom · drag to move</span>{/if}
+    {:else}<span class="navigation">Scroll to zoom · drag to move{ondragout ? " · drag a picked file into a note to link it" : ""}</span>{/if}
   </div>
 <!-- The interactive canvas needs its own focus target for gallery shortcuts. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div class="wall" bind:this={host} role="region" aria-label="Search gallery" aria-describedby="gallery-zoom-help" tabindex="0"
      title={hovered >= 0 ? pieces[hovered]?.name : undefined}
      onpointermove={onPointerMove} onpointerdown={onPointerDown} onpointerup={onPointerUp}
-     onpointercancel={() => (dragging = null)} onkeydown={onKeyDown}
+     onpointercancel={() => { dragging = null; if (linking < 0) host.draggable = false; }} onkeydown={onKeyDown}
+     ondragstart={(event) => { if (linking >= 0) ondragout?.(linking, event); else event.preventDefault(); }}
+     ondragend={() => { linking = -1; host.draggable = false; }}
      onpointerleave={() => { hovered = -1; wake(); }} onwheel={onWheel}
      ondblclick={(event) => {
        if ((event.target as HTMLElement).closest(".zoom-controls")) return;
@@ -745,7 +759,7 @@
   .relevance-key .other { color: var(--search-other-ink); }
   .relevance-key .size-note::before { display: none; }
   .relevance-key .navigation::before { display: none; }
-  .zoom-controls { position: absolute; right: var(--s-4); bottom: var(--s-4); z-index: 1;
+  .zoom-controls { position: absolute; right: var(--s-4); bottom: calc(var(--s-4) + 32px); z-index: 1;   /* (above Obsidian's status bar) */
                    display: flex; align-items: center; padding: var(--s-1); border: 1px solid var(--hairline);
                    border-radius: var(--r-field); background: var(--floor-raised); box-shadow: var(--lift-1); cursor: default; }
   .zoom-controls button { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-steel); }

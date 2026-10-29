@@ -1,5 +1,8 @@
 // What the plugin and its model worker say to each other.
 
+/** The model's files on Hugging Face (downloaded once into Obsidian's cache, for all vaults). */
+export const MODEL_REPO = "onnx-community/embeddinggemma-2-ONNX";
+
 export type Dtype = "q4" | "q4f16" | "quantized" | "fp16";
 
 /** An image already sized for its token budget (as Dowse sizes them), as RGBA pixels. */

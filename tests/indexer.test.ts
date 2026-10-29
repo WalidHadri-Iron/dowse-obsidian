@@ -167,3 +167,61 @@ test("a recording is read in Dowse's windows once sound is on", async () => {
                    [["audio", "audio", 0, 30], ["audio", "audio", 25, 55], ["audio", "audio", 50, 70]]);
   assert.equal((await store.file("Memos/standup.m4a"))!.info.duration, 70);
 });
+
+test("a model that can't start leaves the files waiting, not failed; tried again, they're read", async () => {
+  const store = await Store.open(`test-${++databases}`, "embeddinggemma-2/fp16");
+  const fake = model();
+  let online = false;
+  const indexer = new Indexer(store, vault({ "A.md": "# A\nThe first note.", "B.md": "# B\nThe second note." }), {
+    active: () => true, parts: () => ({ image: false, audio: false }),
+    embed: async () => { if (!online) throw new Error("no connection"); return fake.embed(); },
+  });
+  await indexer.sync();
+  const running = indexer.run();
+  while (indexer.status.state !== "paused") await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(indexer.status.held, "the model couldn't start");
+  assert.equal(indexer.status.failed, 0);
+  assert.deepEqual((await store.files()).map((f) => f.state), ["pending", "pending"]);
+  online = true;
+  indexer.resume();   // (as "Try again" does; else in RETRY_MS)
+  await indexer.settled();
+  indexer.stop();
+  await running;
+  assert.deepEqual((await store.files()).map((f) => f.state), ["done", "done"]);
+  assert.equal(indexer.status.held, undefined, "no longer said to wait for the model");
+});
+
+test("paused, nothing is read until it's resumed", async () => {
+  const store = await Store.open(`test-${++databases}`, "embeddinggemma-2/fp16");
+  const fake = model();
+  let held: string | null = "paused";
+  const indexer = new Indexer(store, vault({ "A.md": "# A\nA note." }), {
+    active: () => true, parts: () => ({ image: false, audio: false }), embed: fake.embed, held: () => held,
+  });
+  await indexer.sync();
+  const running = indexer.run();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(indexer.status.state, "paused");
+  assert.equal(fake.asked.length, 0);
+  held = null;
+  indexer.resume();
+  await indexer.settled();
+  indexer.stop();
+  await running;
+  assert.equal((await store.file("A.md"))!.state, "done");
+});
+
+test("the time left, from the speed of each kind so far", async () => {
+  const { indexer } = await setup({});
+  const row = (path: string, kind: string, size: number) =>
+    ({ path, kind, size, mtime: 1, state: "pending", info: {}, next: null, reader: 0 }) as any;
+  const learn = (indexer as any).learn.bind(indexer);
+  learn(row("a.md", "note", 1000), 1);
+  learn(row("b.md", "note", 3000), 3);
+  assert.equal(indexer.estimate([row("c.md", "note", 2000)]), null, "too little read to tell");
+  learn(row("c.png", "image", 50), 2);
+  learn(row("d.png", "image", 5_000_000), 2);
+  assert.equal(indexer.estimate([row("e.md", "note", 2000)]), 2, "a note: its size at the notes' speed");
+  assert.equal(indexer.estimate([row("f.png", "image", 1)]), 2, "an image: an image's time, whatever its size");
+  assert.equal(indexer.estimate([row("g.pdf", "pdf", 10)]), 2, "a kind not read yet: the files' mean");
+});

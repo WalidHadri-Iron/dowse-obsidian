@@ -3,7 +3,16 @@
 // closes Obsidian. For development on a Windows PC (a portable Node with puppeteer-core); CI uses wdio-obsidian-service.
 //
 //   node obsidian-run.mjs --obsidian <Obsidian.exe> --profile <dir> --vault <dir> --wait <file in the vault>
-//       [--timeout 600] [--shots <dir>] [--port 9333]
+//       [--timeout 600] [--shots <dir>] [--port 9333] [--every 60] [--eval <script>] [--drag <selector>] [--detach 1]
+//
+// `--eval`: a script run once in Obsidian's page when the plugin has loaded (the body of an async function, `app` at
+// hand), for what the plugin can't measure of itself, such as how long Obsidian takes to load it.
+//
+// `--detach`: the debugger let go once the vault is trusted (nothing attached while the plugin works; no screenshots).
+// `--plain`: Obsidian started as a person starts it (no debugging port: the profile must trust the vault already).
+//
+// `--drag`: once the plugin's done, the mouse (real input) finds a case in the view `selector` (where the view shows a
+// hand), clicks it, and drags it: what the drag carries is written to drag.json beside the screenshots.
 
 import { spawn, execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
@@ -25,10 +34,18 @@ writeFileSync(join(args.profile, "obsidian.json"), JSON.stringify({
   vaults: { dowsetest0000001: { path: args.vault, ts: Date.now(), open: true } },
 }));
 
-const obsidian = spawn(args.obsidian, [`--user-data-dir=${args.profile}`, `--remote-debugging-port=${port}`],
+const obsidian = spawn(args.obsidian, [`--user-data-dir=${args.profile}`, ...(args.plain ? [] : [`--remote-debugging-port=${port}`])],
                        { detached: false, stdio: "ignore" });
 const stop = () => { try { execSync(`taskkill /PID ${obsidian.pid} /T /F`, { stdio: "ignore" }); } catch {} };
 process.on("exit", stop);
+if (args.plain) {
+  const waitFor = join(args.vault, args.wait), started = Date.now();
+  while (Date.now() - started < timeout && !existsSync(waitFor)) await new Promise((r) => setTimeout(r, 1000));
+  await new Promise((r) => setTimeout(r, 1000));
+  console.log(existsSync(waitFor) ? readFileSync(waitFor, "utf8") : "timed out: no " + args.wait);
+  stop();
+  process.exit(0);
+}
 
 async function connect() {
   for (let i = 0; i < 120; i++) {
@@ -48,26 +65,62 @@ if (!page) throw new Error("no Obsidian window");
 page.on("console", (message) => appendFileSync(log, `[${message.type()}] ${message.text()}\n`));
 page.on("pageerror", (error) => appendFileSync(log, `[pageerror] ${error.message}\n`));
 
+async function dragFrom(selector) {
+  const box = await page.$eval(selector, (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  const cursor = () => page.$eval(selector, (el) => el.style.cursor);
+  let spot = null;
+  for (let gy = 0.25; gy <= 0.75 && !spot; gy += 0.05) {
+    for (let gx = 0.15; gx <= 0.85 && !spot; gx += 0.04) {
+      const at = { x: Math.round(box.x + box.w * gx), y: Math.round(box.y + box.h * gy) };
+      await page.mouse.move(at.x, at.y);
+      await new Promise((r) => setTimeout(r, 80));
+      if ((await cursor()) === "pointer") spot = at;
+    }
+  }
+  if (!spot) throw new Error("no case under the mouse anywhere");
+  await page.mouse.click(spot.x, spot.y);
+  await new Promise((r) => setTimeout(r, 600));
+  await page.screenshot({ path: join(shots, "drag-picked.png") });
+  await page.setDragInterception(true);
+  const data = await Promise.race([page.mouse.drag(spot, { x: spot.x + 160, y: spot.y + 60 }),
+                                   new Promise((r) => setTimeout(() => r(null), 5000))]);
+  await page.mouse.up().catch(() => {});
+  await page.setDragInterception(false);
+  writeFileSync(join(shots, "drag.json"), JSON.stringify({ spot, items: data?.items ?? null, operations: data?.dragOperationsMask ?? null }));
+}
+
 const started = Date.now();
 const waitFor = join(args.vault, args.wait);
-let trusted = false, shot = 0;
+let trusted = false, shot = 0, evaluated = !args.eval;
 while (Date.now() - started < timeout) {
-  if (!trusted) {   // "Do you trust the author of this vault?": yes (it's ours)
+  if (!trusted && page) {   // "Do you trust the author of this vault?": yes (it's ours)
     trusted = await page.evaluate(() => {
       const button = [...document.querySelectorAll("button")].find((b) => /trust author/i.test(b.textContent ?? ""));
       if (button) button.click();
       return Boolean(button);
     }).catch(() => false);
+    if (trusted && args.detach) { await browser.disconnect(); page = null; }
+  }
+  if (!evaluated && page && await page.evaluate(() => Boolean(window.app?.plugins?.plugins?.dowse)).catch(() => false)) {
+    evaluated = true;
+    const body = readFileSync(args.eval, "utf8");
+    page.evaluate(`(async () => { ${body} })()`).catch((error) => appendFileSync(log, `[eval] ${error.message}\n`));
   }
   if (existsSync(waitFor)) {
     try { if (JSON.parse(readFileSync(waitFor, "utf8")).done) break; } catch {}
   }
-  if ((Date.now() - started) / 60000 > shot) {   // a screenshot a minute, to see where it is
+  if (page && (Date.now() - started) / (Number(args.every ?? 60) * 1000) > shot) {   // a screenshot every so often (a minute)
     await page.screenshot({ path: join(shots, `progress-${shot}.png`) }).catch(() => {});
     shot++;
   }
   await new Promise((r) => setTimeout(r, 1000));
 }
+if (!page) {   // (detached)
+  console.log(existsSync(waitFor) ? readFileSync(waitFor, "utf8") : "timed out: no " + args.wait);
+  stop();
+  process.exit(0);
+}
+if (args.drag) await dragFrom(args.drag).catch((error) => writeFileSync(join(shots, "drag.json"), JSON.stringify({ error: error.message })));
 await page.screenshot({ path: join(shots, "final.png") }).catch(() => {});
 // Obsidian's other windows (Settings opens in its own since 1.14, a note popped out: about:blank pages the main
 // window draws into): one picture each

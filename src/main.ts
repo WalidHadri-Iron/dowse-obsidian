@@ -1,16 +1,19 @@
 // Dowse for Obsidian: the vault searched by what's in it. Off until turned on for a vault (that downloads the model);
 // then the vault is read in the background and kept up to date, folders and files can be turned off by right-click.
+// Reading can be paused (the status bar's menu, a command), until resumed or Obsidian starts again; and while on battery.
 
-import { Notice, Plugin, type TAbstractFile, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Menu, Notice, Plugin, type TAbstractFile, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import { Engine } from "./plugin/engine.ts";
 import { linkTo, openShown } from "./plugin/open.ts";
 import { Pictures } from "./plugin/pictures.ts";
 import { DEFAULTS, isOn, turnOff, turnOn, type Settings } from "./plugin/settings.ts";
 import { DowseSettingTab } from "./plugin/setting-tab.ts";
 import { statusText } from "./plugin/status.ts";
+import { Power } from "./plugin/power.ts";
+import { kindOf } from "./engine/reading/types.ts";
 import { preferred, situation } from "./plugin/graphics.ts";
 import { ICON, QuickSearch, SEARCH_VIEW, SIMILAR_VIEW, SearchView, SimilarView } from "./plugin/views.ts";
-import type { Controller } from "./ui/controller.ts";
+import type { Controller, Reading } from "./ui/controller.ts";
 
 const QUIET_MS = 2000;   // a file being edited is read again once it's been still this long (as Dowse waits)
 const TYPING_MS = 1500;  // reading waits while you've typed this recently
@@ -23,13 +26,18 @@ export default class DowsePlugin extends Plugin {
   private quiet = new Map<string, number>();
   private listeners = new Set<() => void>();
   private pictures!: Pictures;
+  private power!: Power;
+  private followers = new Set<() => void>();
+  paused = false;   // the person paused reading (until resumed, or Obsidian starts again)
   controller!: Controller;
 
   async onload(): Promise<void> {
     this.settings = { ...DEFAULTS, ...(await this.loadData()) };
     this.statusBar = this.addStatusBarItem();
     this.statusBar.addClass("dowse-status");
-    this.statusBar.onClickEvent(() => this.openSettings());
+    this.statusBar.onClickEvent((event) => this.statusMenu(event));
+    this.statusBar.setAttr("aria-label", "Dowse: pause, resume, settings");
+    this.power = new Power(() => { this.engine?.indexer.resume(); this.showStatus(); this.notify(); });
     this.addSettingTab(new DowseSettingTab(this.app, this));
     this.registerDomEvent(document, "keydown", () => (this.lastKey = Date.now()), { capture: true });
     this.registerEvents();
@@ -42,6 +50,11 @@ export default class DowsePlugin extends Plugin {
     this.addCommand({ id: "search", name: "Search the vault", callback: () => new QuickSearch(this.app, this.controller).open() });
     this.addCommand({ id: "open", name: "Open Dowse", callback: () => void this.openSearch() });
     this.addCommand({ id: "similar", name: "Show what's like this note", callback: () => void this.openSimilar() });
+    this.addCommand({ id: "pause", name: "Pause or resume reading", checkCallback: (checking) => {
+      if (!this.engine) return false;
+      if (!checking) this.setPaused(!this.paused);
+      return true;
+    } });
     this.registerEvent(this.app.workspace.on("css-change", () => this.notify()));
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.on) await this.start();
@@ -51,6 +64,7 @@ export default class DowsePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.power.close();
     this.pictures.clear();
     this.engine?.close();
     for (const timer of this.quiet.values()) window.clearTimeout(timer);
@@ -63,10 +77,77 @@ export default class DowsePlugin extends Plugin {
   /** Dowse on for this vault: the index opened, the vault read (the model downloaded, the first time). */
   async start(): Promise<void> {
     if (this.engine) return;
-    this.engine = await Engine.open(this.app, () => this.settings, () => Date.now() - this.lastKey < TYPING_MS);
+    this.engine = await Engine.open(this.app, () => this.settings, {
+      busy: () => Date.now() - this.lastKey < TYPING_MS,
+      held: () => this.held(),
+    });
     this.engine.onChange(() => { this.showStatus(); this.notify(); this.hintGraphics(); });
+    this.engine.search.follow({
+      wanted: () => this.followers.size > 0,
+      made: () => { for (const follower of this.followers) follower(); },
+    });
     this.engine.start();
     this.notify();
+  }
+
+  /** Why reading waits, if it does: the person paused it, or the computer is on its battery (and that's asked). */
+  private held(): string | null {
+    return this.paused ? "paused" : this.settings.batteryPause && this.power.onBattery ? "on battery" : null;
+  }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.engine?.indexer.resume();   // (looked at now, not in half a second)
+    this.showStatus();
+    this.notify();
+  }
+
+  /** The status bar's menu: pause or resume, try the model again, the Dowse tab, the settings. */
+  private statusMenu(event: MouseEvent): void {
+    const menu = new Menu();
+    const engine = this.engine;
+    if (engine && (engine.model.state === "failed" || engine.status.held === "the model couldn't start")) {
+      menu.addItem((item) => item.setTitle("Try to start the model again").setIcon("refresh-cw").onClick(() => engine.retry()));
+    }
+    if (engine && (this.paused || engine.status.state === "reading" || engine.status.state === "waiting")) {
+      menu.addItem((item) => item.setTitle(this.paused ? "Resume reading" : "Pause reading")
+        .setIcon(this.paused ? "play" : "pause").onClick(() => this.setPaused(!this.paused)));
+    }
+    menu.addItem((item) => item.setTitle("Open Dowse").setIcon(ICON).onClick(() => void this.openSearch()));
+    menu.addItem((item) => item.setTitle("Dowse settings").setIcon("settings").onClick(() => this.openSettings()));
+    menu.showAtMouseEvent(event);
+  }
+
+  /** Reading as the views show it. */
+  private reading(): Reading {
+    const engine = this.engine;
+    if (!engine) return { model: "asleep", progress: null, state: "idle", done: 0, total: 0, left: null, paused: this.paused };
+    const { model, status } = engine;
+    return { model: model.state, progress: model.progress ?? null, error: model.error, state: status.state, done: status.done,
+             total: status.total, left: status.left ?? null, held: status.held, paused: this.paused };
+  }
+
+  /** The notes `path` links to, and those that link to it. */
+  private linked(path: string): Set<string> {
+    const resolved = this.app.metadataCache.resolvedLinks;
+    const linked = new Set(Object.keys(resolved[path] ?? {}));
+    for (const [from, to] of Object.entries(resolved)) if (to[path]) linked.add(from);
+    return linked;
+  }
+
+  /** A link to `target` written into the note `into`: at its cursor when it's open for editing, else at its end. */
+  private async insertLink(into: string, target: string): Promise<"cursor" | "end" | null> {
+    const link = linkTo(this.app, target, into);
+    const note = this.app.vault.getFileByPath(into);
+    if (!link || !note) return null;
+    const view = this.app.workspace.getLeavesOfType("markdown").map((leaf) => leaf.view)
+      .find((v): v is MarkdownView => v instanceof MarkdownView && v.file?.path === into && v.getMode() === "source");
+    if (view) {
+      view.editor.replaceSelection(link);
+      return "cursor";
+    }
+    await this.app.vault.process(note, (text) => `${text}${text.endsWith("\n") || !text ? "" : "\n"}${link}\n`);
+    return "end";
   }
 
   /** Once: the model runs on the integrated GPU while a faster card is there (Settings › Dowse can switch). */
@@ -103,6 +184,20 @@ export default class DowsePlugin extends Plugin {
       }),
       status: () => this.engine ? statusText(this.engine) : "",
       ready: () => this.engine?.model.state === "ready",
+      counts: () => {
+        const counts: Record<string, number> = {};
+        for (const file of this.app.vault.getFiles()) {
+          const kind = kindOf(file.path);
+          if (kind) counts[kind] = (counts[kind] ?? 0) + 1;
+        }
+        return counts;
+      },
+      reading: () => this.reading(),
+      pause: (paused) => this.setPaused(paused),
+      retry: () => this.engine?.retry(),
+      follow: (listener) => { this.followers.add(listener); return () => this.followers.delete(listener); },
+      linked: (path) => this.linked(path),
+      insertLink: (into, target) => this.insertLink(into, target),
       dark: () => document.body.hasClass("theme-dark"),
       subscribe: (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); },
     };

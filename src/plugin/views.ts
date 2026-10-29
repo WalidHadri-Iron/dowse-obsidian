@@ -63,6 +63,8 @@ export class SimilarView extends ItemView {
     const current = () => this.app.workspace.getActiveFile()?.path ?? null;
     this.component = mount(SimilarPanel, { target: this.contentEl, props: { controller: this.controller, current } });
     this.registerEvent(this.app.workspace.on("file-open", () => (this.component as { update?: () => void })?.update?.()));
+    this.registerEvent(this.app.metadataCache.on("resolved",   // links changed: what's linked already, again
+      () => (this.component as { relink?: () => void })?.relink?.()));
   }
 
   async onClose(): Promise<void> {

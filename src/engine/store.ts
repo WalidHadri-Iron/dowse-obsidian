@@ -51,6 +51,8 @@ export function toHalf(vector: ArrayLike<number>): ArrayBuffer {
   return Float16Array.from(vector as ArrayLike<number>).buffer as ArrayBuffer;
 }
 
+const SIZE_BATCH = 500;
+
 export class Store {
   private db: IDBDatabase;
   readonly name: string;
@@ -142,6 +144,23 @@ export class Store {
     const segments = tx.objectStore("segments");
     for (const segment of await done(segments.index("path").getAll(from)) as SegmentRow[]) segments.put({ ...segment, path: to });
     await finished(tx);
+  }
+
+  /** What the index holds: its files, its passages, and about how much room it takes (read in batches, not all of
+   * it in memory at once). */
+  async size(): Promise<{ files: number; passages: number; bytes: number }> {
+    const files = await done(this.db.transaction("files").objectStore("files").count());
+    let passages = 0, bytes = 0, after: IDBValidKey | null = null;
+    for (;;) {
+      const store = this.db.transaction("segments").objectStore("segments");
+      const range: IDBKeyRange | undefined = after === null ? undefined : IDBKeyRange.lowerBound(after, true);
+      const [rows, keys]: [SegmentRow[], IDBValidKey[]] = await Promise.all([done(store.getAll(range, SIZE_BATCH)) as Promise<SegmentRow[]>,
+                                              done(store.getAllKeys(range, SIZE_BATCH))]);
+      for (const segment of rows) bytes += (segment.vector?.byteLength ?? 0) + segment.body.length * 2 + 64;
+      passages += rows.length;
+      if (rows.length < SIZE_BATCH) return { files, passages, bytes };
+      after = keys[keys.length - 1];
+    }
   }
 
   async clear(): Promise<void> {

@@ -9,10 +9,17 @@ import { Store } from "../engine/store.ts";
 import { VaultSearch } from "./search.ts";
 import { isOn, type Settings } from "./settings.ts";
 import { VaultSource } from "./source.ts";
+import { modelBytes, removeModel } from "./disk.ts";
 
 export const DTYPE: Dtype = "fp16";   // the one build on both the GPU and the processor (measurements/README.md)
 export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/1`;
 const IDLE_MS = 10 * 60 * 1000;
+
+/** What reading waits for: you typing, or reading paused (and why). */
+export interface You {
+  busy: () => boolean;
+  held: () => string | null;
+}
 
 export interface ModelState {
   state: "asleep" | "downloading" | "loading" | "ready" | "failed";
@@ -27,6 +34,14 @@ export function vaultKey(app: App): string {
   return (app as any).appId ?? app.vault.getName();
 }
 
+/** The room Dowse takes on this computer: this vault's index, and the model's files (for all vaults). */
+export interface Disk {
+  files: number;
+  passages: number;
+  bytes: number;
+  model: number;
+}
+
 export class Engine {
   readonly store: Store;
   readonly indexer: Indexer;
@@ -39,8 +54,13 @@ export class Engine {
   private listeners = new Set<() => void>();
   private downloads = new Map<string, [number, number]>();
   private settings: () => Settings;
+  /** Measured by the engine when reading settles, never asked for by Settings: Settings' window froze Obsidian's
+   * renderer every time it showed what it had itself just read from IndexedDB or the cache (Obsidian 1.14.5, 2026-10-29;
+   * shown through `onChange`, as the status is, it doesn't). */
+  disk: Disk | null = null;
+  private measuring: Promise<void> | null = null;
 
-  private constructor(store: Store, app: App, settings: () => Settings, busy: () => boolean) {
+  private constructor(store: Store, app: App, settings: () => Settings, you: You) {
     this.store = store;
     this.settings = settings;
     this.indexer = new Indexer(store, new VaultSource(app), {
@@ -51,8 +71,13 @@ export class Engine {
         return { texts: (p) => model.texts(p), images: (p) => model.images(p), audio: (c) => model.audio(c) };
       },
       gpu: () => this.model.device !== "wasm",
-      busy,
-      onStatus: () => this.changed(),
+      busy: you.busy,
+      held: you.held,
+      onStatus: (status) => {
+        if (status.state === "idle" && this.wasReading) void this.measure();
+        this.wasReading = status.state !== "idle";
+        this.changed();
+      },
       onSaved: () => { this.search.changed(); this.changed(); },
     });
     this.search = new VaultSearch(store, {
@@ -62,9 +87,39 @@ export class Engine {
     this.timer = window.setInterval(() => this.sleepIfIdle(), 60 * 1000);
   }
 
-  static async open(app: App, settings: () => Settings, busy: () => boolean): Promise<Engine> {
+  static async open(app: App, settings: () => Settings, you: You): Promise<Engine> {
     const store = await Store.open(`dowse-${vaultKey(app)}`, MODEL_TAG);
-    return new Engine(store, app, settings, busy);
+    return new Engine(store, app, settings, you);
+  }
+
+  private wasReading = true;   // (so the first idle measures)
+
+  /** The room Dowse takes, measured again (then `onChange`). */
+  measure(): Promise<void> {
+    this.measuring ??= (async () => {
+      try {
+        const [index, model] = await Promise.all([this.store.size(), modelBytes().catch(() => 0)]);
+        this.disk = { ...index, model };
+        this.changed();
+      } finally {
+        this.measuring = null;
+      }
+    })();
+    return this.measuring;
+  }
+
+  /** The model's files removed from this computer (let go first); answers the bytes freed. */
+  async removeModel(): Promise<number> {
+    this.unload();
+    const freed = await removeModel().catch(() => 0);
+    await this.measure();
+    return freed;
+  }
+
+  /** The model tried again now (it couldn't start), and reading looked at again (resumed). */
+  retry(): void {
+    if (this.model.state === "failed") this.setModel({ state: "asleep" });
+    this.indexer.resume();
   }
 
   get status(): Status {
@@ -129,8 +184,16 @@ export class Engine {
     }
   }
 
+  /** The model let go now (it's loaded again when needed). */
+  unload(): void {
+    this.loaded?.close();
+    this.loaded = null;
+    if (this.model.state === "ready") this.setModel({ state: "asleep" });
+  }
+
   private sleepIfIdle(): void {
-    if (this.loaded && this.indexer.status.state === "idle" && Date.now() - this.lastUsed > IDLE_MS) {
+    const resting = this.indexer.status.state === "idle" || this.indexer.status.state === "paused";
+    if (this.loaded && resting && Date.now() - this.lastUsed > IDLE_MS) {
       this.loaded.close();
       this.loaded = null;
       this.setModel({ state: "asleep" });
@@ -150,6 +213,7 @@ export class Engine {
     this.indexer.stop();
     this.loaded?.close();
     this.loaded = null;
+    this.search.close();
     this.store.close();
     this.listeners.clear();
   }
