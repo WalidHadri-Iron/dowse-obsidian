@@ -363,26 +363,41 @@
     if (moving) wake();   // outstanding requests wake on completion, not via a busy GPU loop
   }
 
+  /** Which aisle's sign stays when two would cover each other: the one gone to, then the bigger, "Everything else" last. */
+  function signRank(aisle: MapAisle): number {
+    if (aisle.index === focusedAisle && cameraMode === "aisle") return Infinity;
+    return aisle.id === "rest" ? -1 : aisle.count;
+  }
+
   const v = new THREE.Vector3();
   function placeOverlays(): void {
     const width = host.clientWidth, height = host.clientHeight;
     // Every size read before any style is written: read between the writes, each one laid the page out again (0.3 s
     // of a walk through Explore, measured with a JavaScript CPU profile).
     const sizes = signs.map((sign) => sign ? [sign.offsetWidth, sign.offsetHeight] : [0, 0]);
-    aisles.forEach((aisle, i) => {
+    // Signs that would cover each other: the bigger aisle's is shown, the other fades until coming closer parts them
+    // (the aisle gone to first, "Everything else" last), as a map's labels do
+    const placed: { left: number; right: number; top: number; bottom: number }[] = [];
+    const order = aisles.map((_, i) => i).sort((a, b) => signRank(aisles[b]) - signRank(aisles[a]));
+    for (const i of order) {
+      const aisle = aisles[i];
       const top = tops.get(aisle.index) ?? { x: aisle.x, y: aisle.y + aisle.radius };
       v.set(top.x, top.y + H / 2 + 0.12, 0).project(camera);   // just above the aisle's own top case
       const sign = signs[i];
-      if (!sign) return;
+      if (!sign) continue;
       const screenX = ((v.x + 1) / 2) * width, screenY = ((1 - v.y) / 2) * height;
       const [signWidth, signHeight] = sizes[i];
-      const visible = v.z < 1 && screenX > signWidth / 2 && screenX < width - signWidth / 2
+      const box = { left: screenX - signWidth / 2 - 4, right: screenX + signWidth / 2 + 4, top: screenY - signHeight - 3, bottom: screenY + 3 };
+      const onScreen = v.z < 1 && screenX > signWidth / 2 && screenX < width - signWidth / 2
         && screenY > signHeight && screenY < height;
+      const clear = !placed.some((p) => p.left < box.right && box.left < p.right && p.top < box.bottom && box.top < p.bottom);
+      const visible = onScreen && clear;
+      if (visible) placed.push(box);
       sign.style.opacity = visible ? "1" : "0";
       sign.style.pointerEvents = visible ? "auto" : "none";
       sign.tabIndex = visible ? 0 : -1;
-      sign.style.transform = `translate(${((v.x + 1) / 2) * width}px, ${((1 - v.y) / 2) * height}px) translate(-50%, -100%)`;
-    });
+      sign.style.transform = `translate(${screenX}px, ${screenY}px) translate(-50%, -100%)`;
+    }
     for (const [path, badge] of badges) {
       const c = byPath.get(path)!;
       v.set(-W / 2, H / 2, .03).applyMatrix4(c.group.matrixWorld).project(camera);

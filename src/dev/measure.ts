@@ -37,11 +37,11 @@ function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
   return dot / Math.sqrt(na * nb);
 }
 
-async function one(dtype: Dtype, device: "auto" | "wasm") {
+async function one(dtype: Dtype, device: "auto" | "wasm", threads?: number) {
   const model = new Model();
   try {
     let started = performance.now();
-    const ran = await model.load(dtype, device);
+    const ran = await model.load(dtype, device, undefined, threads);
     const loaded = (performance.now() - started) / 1000;
     const made: Record<string, Float32Array> = {}, seconds: Record<string, number> = {};
     for (const [name, text] of Object.entries(inputs.texts as Record<string, string>)) {
@@ -67,19 +67,19 @@ async function one(dtype: Dtype, device: "auto" | "wasm") {
     }
     const vectors = reference.vectors as Record<string, number[]>;
     const agreement = Object.fromEntries(Object.keys(vectors).map((n) => [n, cosine(made[n], vectors[n])]));
-    return { dtype, asked: device, device: ran, gpu: model.gpu, loaded_s: loaded, agreement, seconds, again };
+    return { dtype, asked: device, threads, device: ran, gpu: model.gpu, loaded_s: loaded, agreement, seconds, again };
   } catch (error) {
-    return { dtype, asked: device, error: error instanceof Error ? error.message : String(error) };
+    return { dtype, asked: device, threads, error: error instanceof Error ? error.message : String(error) };
   } finally {
     model.close();
   }
 }
 
 /** Passages a second, by batch size: real passages (Dowse's 1,800-character cut of the long reference text). */
-async function throughput(dtype: Dtype, device: "auto" | "wasm", batches: number[]) {
+async function throughput(dtype: Dtype, device: "auto" | "wasm", batches: number[], threads?: number) {
   const model = new Model();
   try {
-    const ran = await model.load(dtype, device);
+    const ran = await model.load(dtype, device, undefined, threads);
     const long = (inputs.texts as Record<string, string>)["document-long"].replace(/^title: none \| text: /, "");
     const passages = chunks(long).map((p) => `title: Greenhouse log | text: ${p}`);
     while (passages.length < 32) passages.push(...passages);
@@ -91,9 +91,9 @@ async function throughput(dtype: Dtype, device: "auto" | "wasm", batches: number
       for (let i = 0; i < count; i += size) await model.texts(passages.slice(i, i + size));
       rates[size] = count / ((performance.now() - started) / 1000);
     }
-    return { dtype, asked: device, device: ran, passages_per_second: rates, passage_chars: passages[0].length };
+    return { dtype, asked: device, threads, device: ran, passages_per_second: rates, passage_chars: passages[0].length };
   } catch (error) {
-    return { dtype, asked: device, error: error instanceof Error ? error.message : String(error) };
+    return { dtype, asked: device, threads, error: error instanceof Error ? error.message : String(error) };
   } finally {
     model.close();
   }
@@ -103,15 +103,18 @@ export async function measureIfAsked(app: App): Promise<void> {
   const asked = "dowse-measure.json";
   if (!(await app.vault.adapter.exists(asked))) return;
   const runs = JSON.parse(await app.vault.adapter.read(asked)) as
-    { dtype: Dtype; device: "auto" | "wasm"; batches?: number[] }[];
+    { dtype: Dtype; device: "auto" | "wasm"; batches?: number[]; threads?: number }[];
   const results = [];
   for (const run of runs) {
-    results.push(run.batches ? await throughput(run.dtype, run.device, run.batches) : await one(run.dtype, run.device));
+    results.push(run.batches ? await throughput(run.dtype, run.device, run.batches, run.threads)
+      : await one(run.dtype, run.device, run.threads));
     await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({ done: false, results }, null, 1));
   }
   const gpu = (navigator as any).gpu ? await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" }) : null;
   await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({
     done: true, userAgent: navigator.userAgent, webgpu: Boolean(gpu),
+    crossOriginIsolated: (self as any).crossOriginIsolated ?? null, sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
+    cores: navigator.hardwareConcurrency,
     adapter: gpu?.info ? { vendor: gpu.info.vendor, architecture: gpu.info.architecture, description: gpu.info.description } : null,
     results,
   }, null, 1));

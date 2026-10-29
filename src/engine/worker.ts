@@ -2,7 +2,7 @@
 // GPU through WebGPU where there is one, else on the processor through WebAssembly. Messages in: load, embed; out: the
 // answer to each (by id), and download progress.
 
-import "./web-only.ts";   // first: a plain web worker, before transformers.js looks at where it is
+import { WEB_ONLY } from "./web-only.ts";   // first: a plain web worker, before transformers.js looks at where it is
 import { AutoConfig, AutoModel, AutoProcessor, RawImage, env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-web/webgpu";   // the same runtime transformers.js uses: its settings are these
 import { MODEL_REPO as MODEL, type Answer, type Picture, type Request } from "./protocol.ts";
@@ -14,17 +14,36 @@ function send(message: Answer, transfer: Transferable[] = []): void {
   (self as unknown as Worker).postMessage(message, transfer);
 }
 
+// The runtime's threads are workers of this worker: what goes wrong in one is said (the ErrorEvent it throws says
+// nothing of itself)
+const NativeWorker = self.Worker;
+if (NativeWorker) {
+  (self as any).Worker = class extends NativeWorker {
+    constructor(url: string | URL, options?: WorkerOptions) {
+      super(url, options);
+      this.addEventListener("error", (event) => send({ op: "log", message:
+        `a thread (${options?.name ?? "worker"}) failed: ${event.message || "(no message)"} ${event.filename ?? ""}:${event.lineno ?? ""}` }));
+    }
+  };
+}
+
+// On the processor, the runtime reads with threads (Obsidian has SharedArrayBuffer, though not cross-origin isolation):
+// half the cores, at most 8, the other half left to you. A long passage a second: 0.29 on one thread, 1.03 on 4, 1.61
+// on 8 (2.16 on 16), the vectors as close to Dowse's (measurements/README.md).
+const THREADS = typeof SharedArrayBuffer === "undefined" ? 1
+  : Math.max(1, Math.min(8, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
+
 async function load(request: Extract<Request, { op: "load" }>): Promise<{ device: string; gpu: string | null }> {
   // The runtime comes from main.js (no code is fetched): its WebAssembly, and the script that loads it as a blob URL
   env.allowLocalModels = false;
   env.useWasmCache = false;
   ort.env.wasm.wasmBinary = request.wasmBinary;
-  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([request.glue], { type: "text/javascript" })) } as any;
-  ort.env.wasm.numThreads = 1;   // threads need cross-origin isolation, which Obsidian's window doesn't have
+  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([WEB_ONLY, request.glue], { type: "text/javascript" })) } as any;
   ort.env.webgpu.powerPreference = "high-performance";   // a laptop's graphics card, not its integrated GPU
   const gpu = request.device !== "wasm" && "gpu" in navigator &&
     await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" });
   const device = gpu ? "webgpu" : "wasm";
+  ort.env.wasm.numThreads = request.threads ?? (device === "wasm" ? THREADS : 1);
   const progress = (event: any) => {
     if (event.status === "progress") send({ op: "progress", file: event.file, loaded: event.loaded, total: event.total });
   };

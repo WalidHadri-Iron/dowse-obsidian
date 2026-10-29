@@ -9,6 +9,7 @@
 // hand), for what the plugin can't measure of itself, such as how long Obsidian takes to load it.
 //
 // `--detach`: the debugger let go once the vault is trusted (nothing attached while the plugin works; no screenshots).
+// `--offline`: Obsidian without the internet (a proxy that isn't there): the model can't be downloaded.
 // `--plain`: Obsidian started as a person starts it (no debugging port: the profile must trust the vault already).
 //
 // `--drag`: once the plugin's done, the mouse (real input) finds a case in the view `selector` (where the view shows a
@@ -34,7 +35,8 @@ writeFileSync(join(args.profile, "obsidian.json"), JSON.stringify({
   vaults: { dowsetest0000001: { path: args.vault, ts: Date.now(), open: true } },
 }));
 
-const obsidian = spawn(args.obsidian, [`--user-data-dir=${args.profile}`, ...(args.plain ? [] : [`--remote-debugging-port=${port}`])],
+const obsidian = spawn(args.obsidian, [`--user-data-dir=${args.profile}`, ...(args.plain ? [] : [`--remote-debugging-port=${port}`]),
+                                       ...(args.offline ? ["--proxy-server=http://127.0.0.1:9"] : [])],
                        { detached: false, stdio: "ignore" });
 const stop = () => { try { execSync(`taskkill /PID ${obsidian.pid} /T /F`, { stdio: "ignore" }); } catch {} };
 process.on("exit", stop);

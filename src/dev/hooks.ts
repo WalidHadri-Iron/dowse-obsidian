@@ -45,7 +45,8 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   if ((wanted as { settingsFirst?: boolean }).settingsFirst) plugin.openSettings();   // (open while the vault is read)
   if (!plugin.settings.on) await plugin.turnOn();
   const engine = plugin.engine!;
-  await engine.indexer.settled();
+  const patience = (wanted as { waitSeconds?: number }).waitSeconds;   // (offline: reading never settles)
+  await (patience ? new Promise((resolve) => setTimeout(resolve, patience * 1000)) : engine.indexer.settled());
   window.clearInterval(sample);
   const read = (performance.now() - started) / 1000;
   const asked = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as
@@ -82,13 +83,30 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   const segments = await engine.store.segments();
   const graphics = { ...(await situation(engine.model.gpu)), preferred: await preferred(), set: asked.graphics };
   if (asked.graphics !== undefined) await prefer(asked.graphics);
+  const index = await engine.store.size(), bytesNow = await modelBytes();
+  let removed: unknown = null;
+  if ((asked as { removeModel?: boolean }).removeModel) {   // Dowse turned off here, the button clicked twice, as a person would
+    await plugin.turnOff(false);
+    plugin.openSettings();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const tab = (plugin.app as any).setting?.activeTab;
+    const button = (text: string) => [...(tab?.containerEl?.querySelectorAll("button") ?? [])]
+      .find((b) => (b as HTMLElement).textContent === text) as HTMLButtonElement | undefined;
+    button("Remove")?.click();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    button("Click again to remove")?.click();
+    await new Promise((resolve) => setTimeout(resolve, 8000));
+    removed = { before: bytesNow, after: await modelBytes(), on: plugin.settings.on,
+                notices: [...document.querySelectorAll(".notice")].map((n) => (n as HTMLElement).textContent) };
+  }
   await adapter.write("dowse-dev-result.json", JSON.stringify({
     done: true,
     seconds: (performance.now() - started) / 1000,
     read,
     timeline,
-    modelBytes: await modelBytes(),
-    index: await engine.store.size(),
+    removed,
+    modelBytes: bytesNow,
+    index,
     vectors: segments.filter((s) => s.vector).length,
     graphics,
     model: engine.model,

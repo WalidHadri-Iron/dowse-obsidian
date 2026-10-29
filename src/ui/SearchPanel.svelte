@@ -14,7 +14,7 @@
   import { folderOf, nameOf, pieceOf, shownOf, VISUAL, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
   import type { Answer } from "../plugin/search.ts";
-  import { heldText, timeLeft } from "../plugin/status.ts";
+  import { heldText, modelTrouble, timeLeft } from "../plugin/status.ts";
   import { dragLink } from "./drag.ts";
 
   let { controller, initial = "" }: { controller: Controller; initial?: string } = $props();
@@ -88,7 +88,8 @@
     if (r.model === "downloading") return { text: `Downloading the search model · ${Math.round((r.progress ?? 0) * 100)}%`,
                                             part: r.progress ?? 0, note: "Once, for all your vaults." };
     if (r.model === "failed" || r.held === "the model couldn't start") return { text: "The search model couldn't start",
-      part: null, note: `${r.error ?? "No connection?"} Dowse tries again every 2 minutes; meanwhile files are found by name.`, retry: true };
+      part: null, note: `${modelTrouble(r.error)} Dowse tries again every 2 minutes; meanwhile files are found by name.`,
+      retry: true };
     const left = r.total - r.done;
     if (r.state === "paused") return { text: `${cap(heldText(r.held))} · ${left.toLocaleString()} files to read`,
                                        part: r.total ? r.done / r.total : 0, note: "", resume: r.paused };

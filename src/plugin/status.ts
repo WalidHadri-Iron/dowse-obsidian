@@ -15,6 +15,13 @@ export function timeLeft(seconds: number | null | undefined): string {
   return rest ? `about ${hours} h ${rest} min left` : `about ${hours} h left`;
 }
 
+/** Why the model couldn't start, in words: no connection (its download), else what was said. */
+export function modelTrouble(error: string | undefined): string {
+  if (!error || /fetch|network|ERR_|ENOTFOUND|ECONN|offline/i.test(error))
+    return "There's no connection to Hugging Face, where it's downloaded from.";
+  return `${error.replace(/[.\s]+$/, "")}.`;
+}
+
 /** Why reading is paused, in words. */
 export function heldText(held: string | undefined): string {
   return held === "on battery" ? "paused while on battery" : held === "paused" ? "reading paused"

@@ -9,7 +9,7 @@ import { isOn, plainExclusions } from "./settings.ts";
 import { kindOf } from "../engine/reading/types.ts";
 import { prefer, preferred, situation } from "./graphics.ts";
 import { sizeText } from "./disk.ts";
-import { heldText, readingText } from "./status.ts";
+import { heldText, modelTrouble, readingText } from "./status.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
@@ -54,20 +54,21 @@ export class DowseSettingTab extends PluginSettingTab {
         await this.plugin.turnOn();
         this.display();
       }));
+    this.removeSetting(el);
   }
 
   private statusEl: HTMLElement | null = null;
   private retryEl: HTMLElement | null = null;
   private indexEl: Setting | null = null;
   private modelEl: Setting | null = null;
-  private removeButton: { setDisabled(disabled: boolean): unknown } | null = null;
 
   private refreshStatus(): void {
     if (!this.statusEl || !this.plugin.engine) return;
     const { model, status } = this.plugin.engine;
     const where = model.state !== "ready" ? { asleep: "asleep (it wakes when there's something to read)",
       downloading: `downloading, ${Math.round((model.progress ?? 0) * 100)}%`, loading: "starting",
-      failed: `couldn't start: ${model.error}. Dowse tries again every 2 minutes`, ready: "" }[model.state]
+      failed: `couldn't start. ${modelTrouble(model.error).replace(/\.$/, "")}; Dowse tries again every 2 minutes`,
+      ready: "" }[model.state]
       : model.device === "webgpu" ? `on the graphics card (WebGPU${model.gpu ? `: ${model.gpu}` : ""})`
       : "on the processor (no WebGPU here: slower)";
     const reading = status.state === "idle" ? "Up to date" : status.state === "waiting" ? "Waiting while you type"
@@ -84,10 +85,9 @@ export class DowseSettingTab extends PluginSettingTab {
     this.indexEl?.setDesc(!disk ? "Measured once reading is done." :
       `${disk.files.toLocaleString()} files, ${disk.passages.toLocaleString()} passages: about ${sizeText(disk.bytes)}, ` +
       `in Obsidian's own storage on this computer (not in the vault, so it isn't synced).`);
-    this.modelEl?.setDesc(!disk ? "Measured once reading is done." : disk.model ? `${sizeText(disk.model)} in ` +
-      `Obsidian's cache, for all your vaults. It stays there if you remove the plugin: remove it here first. Vaults ` +
-      `where Dowse is on download it again when they next need it.` : "Not downloaded on this computer.");
-    this.removeButton?.setDisabled(!disk?.model);
+    this.modelEl?.setDesc(!disk ? "Measured once reading is done." : (disk.model ? `${sizeText(disk.model)} in ` +
+      `Obsidian's cache, for all your vaults.` : "Not downloaded on this computer.") + " It stays there if you remove " +
+      "the plugin: to remove it, turn Dowse off for this vault (below), then remove it there.");
   }
 
   private onView(el: HTMLElement): void {
@@ -180,28 +180,37 @@ export class DowseSettingTab extends PluginSettingTab {
     el.createEl("p", { cls: "setting-item-description", text: `Model build: ${DTYPE}.` });
   }
 
-  /** The model's files on this computer, and removing them (two clicks: the second within a few seconds). */
+  /** The model's files on this computer: their size, as the engine measured it. Removed once Dowse is off here
+   * (`removeSetting`): with Dowse on, it would only be downloaded again. */
   private modelSetting(el: HTMLElement): void {
     this.modelEl = new Setting(el).setName("The search model");
+  }
+
+  /** Dowse off here: the model's files removed from this computer (two clicks: the second within a few seconds), the
+   * way to leave nothing behind before removing the plugin. Its size isn't shown: Settings never reads storage itself
+   * (see `Engine.disk`), and with Dowse off there's no engine to have measured it. */
+  private removeSetting(el: HTMLElement): void {
     let armed = 0;
-    this.modelEl.addButton((button) => {
-      this.removeButton = button;
-      const reset = () => { button.setButtonText("Remove from this computer"); button.buttonEl.removeClass("mod-warning"); };
-      reset();
-      button.onClick(async () => {
-        if (!armed) {
-          button.setButtonText("Click again to remove").setWarning();
-          armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
-          return;
-        }
-        window.clearTimeout(armed);
-        armed = 0;
+    new Setting(el).setName("Remove the search model from this computer")
+      .setDesc("Its files stay in Obsidian's cache, for all your vaults, until removed here, even once the plugin is " +
+        "gone. Vaults where Dowse is on download it again when they next need it.")
+      .addButton((button) => {
+        const reset = () => { button.setButtonText("Remove"); button.buttonEl.removeClass("mod-warning"); };
         reset();
-        button.setDisabled(true);
-        const freed = await this.plugin.engine?.removeModel() ?? 0;   // (shown again through onChange)
-        new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
+        button.onClick(async () => {
+          if (!armed) {
+            button.setButtonText("Click again to remove").setWarning();
+            armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
+            return;
+          }
+          window.clearTimeout(armed);
+          armed = 0;
+          button.setButtonText("Removing…").setDisabled(true);
+          const freed = await this.plugin.removeModel();
+          new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
+          this.display();
+        });
       });
-    });
   }
 
   /** A PC with a graphics card and an integrated GPU: run Obsidian on the card (Windows' own preference for it). Only

@@ -9,7 +9,7 @@ import { Store } from "../engine/store.ts";
 import { VaultSearch } from "./search.ts";
 import { isOn, type Settings } from "./settings.ts";
 import { VaultSource } from "./source.ts";
-import { modelBytes, removeModel } from "./disk.ts";
+import { modelBytes } from "./disk.ts";
 
 export const DTYPE: Dtype = "fp16";   // the one build on both the GPU and the processor (measurements/README.md)
 export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/1`;
@@ -49,6 +49,7 @@ export class Engine {
   model: ModelState = { state: "asleep" };
   private loaded: Model | null = null;
   private loading: Promise<Model> | null = null;
+  private starting: Model | null = null;   // the model being loaded (downloaded), until it's ready
   private lastUsed = 0;
   private timer: number;
   private listeners = new Set<() => void>();
@@ -108,14 +109,6 @@ export class Engine {
     return this.measuring;
   }
 
-  /** The model's files removed from this computer (let go first); answers the bytes freed. */
-  async removeModel(): Promise<number> {
-    this.unload();
-    const freed = await removeModel().catch(() => 0);
-    await this.measure();
-    return freed;
-  }
-
   /** The model tried again now (it couldn't start), and reading looked at again (resumed). */
   retry(): void {
     if (this.model.state === "failed") this.setModel({ state: "asleep" });
@@ -167,7 +160,7 @@ export class Engine {
   private async load(): Promise<Model> {
     this.downloads.clear();
     this.setModel({ state: "loading" });
-    const model = new Model((file, loaded, total) => {
+    const model = this.starting = new Model((file, loaded, total) => {
       this.downloads.set(file, [loaded, total]);
       const [got, all] = [...this.downloads.values()].reduce(([a, b], [c, d]) => [a + c, b + d], [0, 0]);
       if (all > 0 && got < all) this.setModel({ state: "downloading", progress: got / all });
@@ -179,16 +172,22 @@ export class Engine {
       return model;
     } catch (error) {
       model.close();
-      this.setModel({ state: "failed", error: error instanceof Error ? error.message : String(error) });
+      const letGo = this.starting !== model;   // (let go while it loaded: not a failure)
+      this.setModel(letGo ? { state: "asleep" } : { state: "failed", error: error instanceof Error ? error.message : String(error) });
       throw error;
+    } finally {
+      if (this.starting === model) this.starting = null;
     }
   }
 
-  /** The model let go now (it's loaded again when needed). */
+  /** The model let go now, a model still loading (downloading) too: it's loaded again when needed. */
   unload(): void {
+    const starting = this.starting;
+    this.starting = null;
+    starting?.close();
     this.loaded?.close();
     this.loaded = null;
-    if (this.model.state === "ready") this.setModel({ state: "asleep" });
+    if (this.model.state !== "failed") this.setModel({ state: "asleep" });
   }
 
   private sleepIfIdle(): void {
@@ -211,8 +210,7 @@ export class Engine {
   close(): void {
     window.clearInterval(this.timer);
     this.indexer.stop();
-    this.loaded?.close();
-    this.loaded = null;
+    this.unload();
     this.search.close();
     this.store.close();
     this.listeners.clear();

@@ -37,8 +37,20 @@ same with the engine's parts inside functions V8 only skims 44 ms (no gain: read
 cost); with the WebAssembly packed with xz (6.4 MB main.js) **26 ms**. Unpacking xz when the model loads takes
 0.26 s against gzip's 0.10 (Node), once per model start, which takes seconds anyway.
 
-The q4 build for PCs without WebGPU (asked again): it can't, as measured above (no GatherBlockQuantized on the
-processor, and its vectors would be another space than an index read on a GPU).
+## The processor, faster
+
+The q4 build for PCs without WebGPU (asked again, 2026-10-29, Obsidian 1.14.5): still "Could not find an
+implementation for GatherBlockQuantized(1) node with name 'node_embedding_Quant'" (only the word embeddings use it),
+and its vectors would be another space than an index read on a GPU. What makes the processor faster is threads:
+Obsidian has SharedArrayBuffer (though not cross-origin isolation), and the runtime's threads only needed to be kept
+from Node (`WEB_ONLY`, put before the runtime's script). fp16, long passages (1,827 characters) a second, 24 cores:
+
+| Threads | 1 | 4 | 8 | 12 | 16 |
+|---|---|---|---|---|---|
+| Passages a second | 0.29 | 1.03 | 1.61 | 1.82 | 2.16 |
+
+On 8 threads the vectors are as close to Dowse's as on one (lowest cosine 0.99936). The plugin takes half the cores,
+at most 8 (`worker.ts` THREADS): the other half is left to you.
 
 ## The time left
 

@@ -17,10 +17,12 @@ export interface Picture {
 export interface Parts { image: boolean; audio: boolean }
 
 export type Request =
-  | { op: "load"; id: number; dtype: Dtype; device: "auto" | "wasm"; parts: Parts; wasmBinary: ArrayBuffer; glue: string }
+  | { op: "load"; id: number; dtype: Dtype; device: "auto" | "wasm"; parts: Parts; wasmBinary: ArrayBuffer; glue: string;
+      threads?: number }
   | { op: "embed"; id: number; texts?: string[]; images?: Picture[]; audio?: Float32Array[] };
 
 export type Answer =
   | { op: "done"; id: number; result: any }
   | { op: "failed"; id: number; message: string }
-  | { op: "progress"; file: string; loaded: number; total: number };
+  | { op: "progress"; file: string; loaded: number; total: number }
+  | { op: "log"; message: string };   // (what the worker has to say: the console's)

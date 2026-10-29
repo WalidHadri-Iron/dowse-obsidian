@@ -36,6 +36,7 @@ export class Model {
 
   private answer(message: Answer): void {
     if (message.op === "progress") return this.onProgress(message.file, message.loaded, message.total);
+    if (message.op === "log") return console.log("Dowse's model:", message.message);
     const pending = this.pending.get(message.id);
     if (!pending) return;
     this.pending.delete(message.id);
@@ -57,10 +58,11 @@ export class Model {
   }
 
   /** Loads the model (downloaded the first time); answers where it runs: "webgpu" or "wasm" (the processor). */
-  async load(dtype: Dtype, device: "auto" | "wasm" = "auto", parts: Parts = { image: true, audio: true }): Promise<string> {
+  async load(dtype: Dtype, device: "auto" | "wasm" = "auto", parts: Parts = { image: true, audio: true },
+             threads?: number): Promise<string> {
     const wasmBinary = await unpack(wasmPacked());
     const answer = await this.ask<{ device: string; gpu: string | null }>(
-      { op: "load", dtype, device, parts, wasmBinary, glue: glue() }, [wasmBinary]);
+      { op: "load", dtype, device, parts, wasmBinary, glue: glue(), threads }, [wasmBinary]);
     this.parts = parts;
     this.device = answer.device;
     this.gpu = answer.gpu;

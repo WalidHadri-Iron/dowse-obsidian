@@ -10,6 +10,7 @@ import { DEFAULTS, isOn, turnOff, turnOn, type Settings } from "./plugin/setting
 import { DowseSettingTab } from "./plugin/setting-tab.ts";
 import { statusText } from "./plugin/status.ts";
 import { Power } from "./plugin/power.ts";
+import { removeModel } from "./plugin/disk.ts";
 import { kindOf } from "./engine/reading/types.ts";
 import { preferred, situation } from "./plugin/graphics.ts";
 import { ICON, QuickSearch, SEARCH_VIEW, SIMILAR_VIEW, SearchView, SimilarView } from "./plugin/views.ts";
@@ -226,6 +227,12 @@ export default class DowsePlugin extends Plugin {
     await this.start();
     this.showStatus();
     this.notify();
+  }
+
+  /** The model's files removed from this computer (a model loading or loaded let go first); answers the bytes freed. */
+  async removeModel(): Promise<number> {
+    this.engine?.unload();
+    return removeModel().catch(() => 0);
   }
 
   /** Off for this vault: reading stops; `forget` also deletes the index. */
