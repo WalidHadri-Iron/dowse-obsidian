@@ -77,9 +77,9 @@
     <ResultList {items} compact {controller}>
       {#snippet aside(item: Shown)}
         {#if linked.has(item.path)}
-          <span aria-label="Linked already" title="Linked already"><Icon name="link" size={14} /></span>
+          <span role="img" aria-label="Linked already" title="Linked already"><Icon name="link" size={14} /></span>
         {:else}
-          <button class="dowse-link-button" title="Add a link to it in the open note"
+          <button class="dowse-link-button" title="Add a link to it in the open note" aria-label={`Link ${titleOf(item)}`}
                   onclick={(event) => { event.stopPropagation(); void link(item); }}>Link</button>
         {/if}
       {/snippet}

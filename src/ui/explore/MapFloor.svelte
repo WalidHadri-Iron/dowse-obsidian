@@ -401,10 +401,13 @@
         && screenX > -signWidth / 2 && screenX < width + signWidth / 2;
       screenY = Math.max(screenY, signHeight + 6);
       screenX = Math.min(Math.max(screenX, signWidth / 2 + 4), width - signWidth / 2 - 4);
-      const box = { left: screenX - signWidth / 2 - 4, right: screenX + signWidth / 2 + 4, top: screenY - signHeight - 3, bottom: screenY + 3 };
-      const free = !placed.some((p) => p.left < box.right && box.left < p.right && p.top < box.bottom && box.top < p.bottom);
-      const visible = onScreen && free;
-      if (visible) placed.push(box);
+      // Covering a bigger aisle's sign: moved up, else down, by a sign's height; hidden only if neither is free
+      const boxAt = (y: number) => ({ left: screenX - signWidth / 2 - 4, right: screenX + signWidth / 2 + 4, top: y - signHeight - 3, bottom: y + 3 });
+      const isFree = (b: ReturnType<typeof boxAt>) => b.top > 0 && b.bottom < height
+        && !placed.some((p) => p.left < b.right && b.left < p.right && p.top < b.bottom && b.top < p.bottom);
+      const y = [screenY, screenY - signHeight - 6, screenY + signHeight + 6].find((at) => isFree(boxAt(at)));
+      const visible = onScreen && y !== undefined;
+      if (visible) { screenY = y; placed.push(boxAt(y)); }
       sign.style.opacity = visible ? "1" : "0";
       sign.style.pointerEvents = visible ? "auto" : "none";
       sign.tabIndex = visible ? 0 : -1;
@@ -662,9 +665,9 @@
      onpointercancel={() => { if (!drag?.link) { drag = null; host.draggable = false; } }}
      ondragstart={(event) => { if (drag?.link) ondragout?.(drag.link, event); else event.preventDefault(); }}
      ondragend={() => { drag = null; host.draggable = false; }}>
-  <div class="signs" bind:this={signLayer}></div>
-  <div class="tags" bind:this={tagLayer} aria-hidden="true"></div>
   <div class="ranks" bind:this={rankLayer}></div>
+  <div class="signs" bind:this={signLayer}></div>   <!-- (over the numbers: a sign's words stay readable) -->
+  <div class="tags" bind:this={tagLayer} aria-hidden="true"></div>
   <div class="map-controls" role="group" aria-label="Map zoom">
     <button onclick={() => zoomBy(1.3)} aria-label="Further away" title="Further away (−)"><Icon name="remove" size={18} /></button>
     <button onclick={() => zoomBy(1 / 1.3)} aria-label="Closer" title="Closer (+)"><Icon name="add" size={18} /></button>
@@ -674,14 +677,15 @@
   {#if found !== null}
     <div class="relevance-key" aria-label="Search relevance">
       {#if !found.size}<span class="size-note">No results here</span>
-      {:else if clear}<span class="match">Matches · sharp</span>
+      {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
-      <span class="other">Other files · softened</span>
+      {#if clear && found.size > (matches?.size ?? 0)}<span class="closest">Close</span>{/if}
+      <span class="other">Everything else</span>
       {#if found.size && clear}<span class="size-note">Larger = stronger match</span>{/if}
       {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>
   {:else}
-    <div class="relevance-key"><span class="size-note">Scroll to come closer · drag to walk · a sign takes you to its aisle · double-click opens{ondragout ? " · drag a picked file into a note to link it" : ""}</span></div>
+    <div class="relevance-key"><span class="size-note">Scroll to zoom · drag to move · click a sign to go to its aisle · double-click a file to open it{ondragout ? " · drag a selected file into a note to link it" : ""}</span></div>
   {/if}
 </div>
 
@@ -699,9 +703,9 @@
   .map-controls .whole { margin-left: var(--s-1); border-left: 1px solid var(--hairline); border-radius: 0; }
   .floor :global(canvas) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .signs, .tags, .ranks { position: absolute; inset: 0; pointer-events: none; }
-  .relevance-key { display: flex; flex-wrap: wrap;
-                   gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3); color: var(--ink-2);
-                   background: var(--floor-raised); border-bottom: 1px solid var(--hairline);
+  /* As the wall's: a line of plain text over the floor, not a band */
+  .relevance-key { display: flex; flex-wrap: wrap; align-items: center;
+                   gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-4); color: var(--ink-2);
                    font-size: var(--text-xs); pointer-events: none; }
   .relevance-key span { display: flex; align-items: center; gap: var(--s-2); }
   .relevance-key span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }
@@ -719,6 +723,7 @@
   .ranks :global(.rank-badge[aria-pressed="true"]) { outline: 2px solid var(--focus); outline-offset: 2px; }
   .signs :global(.aisle-sign) {
     position: absolute; left: 0; top: 0; pointer-events: auto;
+    height: auto; line-height: normal;   /* (Obsidian gives every button a fixed height: the count was cut off) */
     display: grid; justify-items: start; gap: 1px;
     padding: 6px 12px 7px;
     background: var(--steel); color: var(--steel-ink);
@@ -729,14 +734,14 @@
   }
   .signs :global(.aisle-sign:hover) { background: var(--steel-raised); }
   .signs :global(.aisle-sign b) { font: 620 var(--text-md) / 1.15 var(--face-sign); font-variation-settings: "wdth" 112; }
-  .signs :global(.aisle-sign span) { font: 400 10.5px / 1.3 var(--face-data); color: var(--steel-ink-2); }
+  .signs :global(.aisle-sign span) { font: 400 11.5px / 1.3 var(--face-data); color: var(--steel-ink-2); }
   .tags :global(.case-tag) {
     position: absolute; left: 0; top: 0; display: grid; gap: 1px; max-width: 260px;
     padding: 5px 9px; background: var(--tag); color: var(--tag-ink); border-radius: var(--r-steel); box-shadow: var(--lift-1);
     opacity: 0; transition: opacity var(--t-rail) var(--rail);
   }
   .tags :global(.case-tag b) { font: 600 var(--text-sm) / 1.25 var(--face-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tags :global(.case-tag span) { font: 400 10.5px / 1.3 var(--face-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tags :global(.case-tag span) { font: 400 11.5px / 1.3 var(--face-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags :global(.case-tag[data-relevance="match"]) { box-shadow: var(--lift-1), inset 0 -2px 0 var(--search-match); }
   .tags :global(.case-tag[data-relevance="closest"].selected) { box-shadow: var(--lift-2), inset 0 -2px 0 var(--focus); }
   .tags :global(.case-tag[data-relevance="other"]) { box-shadow: var(--lift-1), inset 0 -2px 0 var(--search-other); }

@@ -11,7 +11,7 @@
   import { rankedStep } from "./explore/explore-view.ts";
   import type { ExploreMap } from "../engine/search/explore.ts";
   import { CLOSEST_LABEL } from "./wall/search-confidence.ts";
-  import { folderOf, nameOf, pieceOf, shownOf, VISUAL, type Shown } from "./results.ts";
+  import { folderOf, lineOf, nameOf, pieceOf, shownOf, titleOf, VISUAL, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
   import type { Answer } from "../plugin/search.ts";
   import { heldText, modelTrouble, timeLeft } from "../plugin/status.ts";
@@ -104,6 +104,18 @@
     return null;
   });
   const cap = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
+  // What a screen reader is told of reading: its state, and every tenth of the way (not every file)
+  const heard = $derived(strip ? `${strip.text.split(" · ")[0]}${strip.part !== null ? `, ${Math.floor(strip.part * 10) * 10}%` : ""}` : "");
+
+  // The search field drives the results (a combobox): its option is the one selected, whichever layout shows them; on
+  // the wall and the map, whose cases are drawn, an unseen list says them
+  const uid = Math.random().toString(36).slice(2, 8);
+  const listId = `dowse-results-${uid}`;
+  const current = $derived.by(() => {
+    if (!searching || !hits.length) return undefined;
+    if (layout === "map") { const i = chosen ? hits.findIndex((h) => h.path === chosen) : -1; return i >= 0 ? `${listId}-${i}` : undefined; }
+    return selected >= 0 && selected < hits.length ? `${listId}-${selected}` : undefined;
+  });
   const many = (n: number | undefined, one: string, more: string) => `${(n ?? 0).toLocaleString()} ${n === 1 ? one : more}`;
 
   const summary = $derived.by(() => {
@@ -121,7 +133,7 @@
     const matches = answer.strong;
     const words = answer.meaning ? "" : " · words only, while the model starts";
     if (!answer.hits.length) return `Nothing found${words}`;
-    return (matches ? `${matches} match${matches === 1 ? "" : "es"}` : CLOSEST_LABEL) + ` · ${Math.round(answer.ms)} ms${words}`;
+    return (matches ? `${matches} match${matches === 1 ? "" : "es"}` : CLOSEST_LABEL) + words;
   });
 
   async function run(): Promise<void> {
@@ -229,6 +241,8 @@
           what's read so far, and pause it.</li>
         <li><b>Then it keeps up as you write.</b> Images, recordings and videos are found by name; Settings › Dowse can
           read what's in them too.</li>
+        <li><b>Beside your notes</b>, “Like this note” shows what's like the one open, and links it in a click (the
+          status bar's Dowse menu opens it).</li>
       </ol>
       <button class="mod-cta" onclick={() => controller.turnOn()}>Turn on for this vault</button>
       <p class="dowse-quiet">Folders and files can be left out (right-click, “Dowse: stop searching”), and Dowse turned
@@ -240,7 +254,9 @@
         <div class="dowse-search">
           <Icon name="search" size={18} />
           <input bind:this={input} type="search" placeholder="Describe what you remember" bind:value={query}
-                 oninput={changed} onkeydown={keys} spellcheck="false" aria-label="Search the vault" />
+                 oninput={changed} onkeydown={keys} spellcheck="false" aria-label="Search the vault"
+                 role="combobox" aria-autocomplete="list" aria-expanded={searching && hits.length > 0}
+                 aria-controls={listId} aria-activedescendant={current} />
         </div>
         <div class="dowse-layout" role="radiogroup" aria-label="Show results as">
           <button class="clickable-icon" class:is-active={layout === "wall"} aria-label="As a wall" role="radio"
@@ -260,8 +276,9 @@
         </div>
       </div>
       {#if strip}
-        <div class="dowse-strip" role="status">
-          <div class="dowse-strip-text">
+        <div class="dowse-strip">
+          <span class="dowse-unseen" role="status">{heard}</span>
+          <div class="dowse-strip-text" aria-hidden="true">
             <span>{strip.text}</span>
             {#if strip.note}<span class="dowse-quiet">{strip.note}</span>{/if}
           </div>
@@ -273,6 +290,15 @@
       {/if}
       <div class="dowse-summary" aria-live="polite">{summary}</div>
     </div>
+    {#if layout !== "list" && searching && hits.length}
+      <ul class="dowse-unseen" role="listbox" id={listId} aria-label="Results">
+        {#each hits as hit, i (hit.path + ":" + hit.loc)}
+          <li role="option" id={`${listId}-${i}`} aria-selected={`${listId}-${i}` === current}>
+            {answer && answer.strong > 0 && i >= answer.strong ? "Not as close: " : ""}{titleOf(hit)}, {lineOf(hit)}
+          </li>
+        {/each}
+      </ul>
+    {/if}
     <div class="dowse-body" class:dowse-floor={layout === "map"}>
       {#if layout === "map"}
         {#if mapPieces.length}
@@ -296,7 +322,7 @@
               ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
         <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)}
-                    strong={searching && answer ? answer.strong : null} />
+                    strong={searching && answer ? answer.strong : null} id={listId} />
       {:else if searching && answer && !busy}
         <div class="dowse-empty">Nothing in this vault matches “{query}”.</div>
       {:else if !searching}

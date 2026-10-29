@@ -708,12 +708,12 @@
   <div class="relevance-key" aria-label={searching ? "Search relevance" : "Gallery navigation"}>
     {#if searching}
       {#if !pieces.some((piece) => !piece.back)}<span class="closest">No results · collection shown</span>
-      {:else if clear}<span class="match">Matches · sharp</span>
+      {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
-      {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Other candidates · sharp</span>{/if}
-      <span class="other">Other files · softened</span>
+      {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Close</span>{/if}
+      <span class="other">Everything else</span>
       {#if clear && pieces.some((piece) => !piece.back)}<span class="size-note">Larger = stronger match</span>{/if}
-    {:else}<span class="navigation">Scroll to zoom · drag to move{ondragout ? " · drag a picked file into a note to link it" : ""}</span>{/if}
+    {:else}<span class="navigation">Scroll to zoom · drag to move{ondragout ? " · drag a selected file into a note to link it" : ""}</span>{/if}
   </div>
 <!-- The interactive canvas needs its own focus target for gallery shortcuts. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -792,16 +792,16 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tags :global(.tag span) {
-    font: 400 10.5px / 1.3 var(--face-data);
+    font: 400 11.5px / 1.3 var(--face-data);
     font-variant-numeric: tabular-nums;
-    color: color-mix(in srgb, var(--tag-ink) 72%, transparent);
+    color: var(--tag-ink);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tags :global(.tag.big) { max-width: 340px; padding: 7px 12px; }
   .tags :global(.tag.big b) { font: 620 var(--text-lg) / 1.2 var(--face-sign); font-variation-settings: "wdth" 108; }
   .tags :global(.tag.on) { box-shadow: var(--lift-2), inset 0 -2px 0 var(--found); }
   .tags :global(.tag i) {
-    font: 500 10px / 1.3 var(--face-data); font-style: normal; font-variant-numeric: tabular-nums;
+    font: 500 11px / 1.3 var(--face-data); font-style: normal; font-variant-numeric: tabular-nums;
     color: var(--tag-found); margin-right: 6px;
   }
   .tags :global(.tag.number) { padding: 2px 7px; border-radius: 3px; box-shadow: inset 0 -2px 0 var(--found); }

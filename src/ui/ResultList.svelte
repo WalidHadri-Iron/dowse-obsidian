@@ -6,7 +6,7 @@
   import { KIND_ICON, lineOf, runs, titleOf, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
 
-  let { items, selected = -1, compact = false, controller, onselect, aside, strong = null }: {
+  let { items, selected = -1, compact = false, controller, onselect, aside, strong = null, id = undefined }: {
     items: Shown[];
     selected?: number;
     compact?: boolean;       // the sidebar's: no excerpts
@@ -14,7 +14,19 @@
     onselect?: (index: number) => void;
     aside?: Snippet<[Shown]>;   // at the row's end (the sidebar's: linked, or a button to link it)
     strong?: number | null;     // a search's matches, the first so many (null: not a search)
+    id?: string;                // the listbox's (the search field points into it); its options' are `${id}-${index}`
   } = $props();
+  // The keyboard: one row in the Tab order (the selected one, else the first), ↑/↓ from row to row, Enter opens
+  let focusAt = $state(0);
+  const tabbable = $derived(selected >= 0 ? selected : focusAt);
+  function step(event: KeyboardEvent, index: number): void {
+    const next = event.key === "ArrowDown" ? index + 1 : event.key === "ArrowUp" ? index - 1 : -1;
+    if (next < 0 || next >= items.length) return;
+    event.preventDefault();
+    focusAt = next;
+    onselect?.(next);
+    list?.querySelector<HTMLElement>(`[data-index="${next}"]`)?.focus();
+  }
   const close = (index: number) => strong !== null && strong > 0 && index >= strong;
 
   let list: HTMLElement;
@@ -31,16 +43,17 @@
   }
 </script>
 
-<div class="dowse-results" class:compact bind:this={list} role="listbox" aria-label="Results">
+<div class="dowse-results" class:compact bind:this={list} role="listbox" aria-label="Results" {id}>
   {#each items as item, index (item.path + ":" + item.loc)}
     {#if close(index) && index === strong}<div class="dowse-results-divider" aria-hidden="true">Not as close</div>{/if}
     <div class="dowse-result" class:is-selected={index === selected} class:is-close={close(index)} data-index={index}
-         role="option" aria-selected={index === selected} tabindex="-1" draggable="true" ondragstart={(e) => drag(e, item)}
+         role="option" aria-selected={index === selected} tabindex={index === tabbable ? 0 : -1}
+         id={id ? `${id}-${index}` : undefined} draggable="true" ondragstart={(e) => drag(e, item)}
          onmouseover={(e) => controller.hover(e, item.path, e.currentTarget as HTMLElement)}
-         onfocus={() => onselect?.(index)}
+         onfocus={() => { focusAt = index; onselect?.(index); }}
          onclick={(e) => { onselect?.(index); controller.open(item, e.ctrlKey || e.metaKey); }}
          onauxclick={(e) => { if (e.button === 1) controller.open(item, true); }}
-         onkeydown={(e) => { if (e.key === "Enter") controller.open(item, e.ctrlKey || e.metaKey); }}>
+         onkeydown={(e) => { if (e.key === "Enter") controller.open(item, e.ctrlKey || e.metaKey); else step(e, index); }}>
       <span class="dowse-result-icon"><Icon name={KIND_ICON[item.kind] ?? "file"} size={16} /></span>
       <div class="dowse-result-text">
         <div class="dowse-result-title">{#if close(index)}<span class="dowse-unseen">Not as close: </span>{/if}{titleOf(item)}</div>

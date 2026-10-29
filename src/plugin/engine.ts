@@ -9,7 +9,7 @@ import { Store } from "../engine/store.ts";
 import { VaultSearch } from "./search.ts";
 import { isOn, type Settings } from "./settings.ts";
 import { VaultSource } from "./source.ts";
-import { modelBytes } from "./disk.ts";
+import { modelSizes } from "./disk.ts";
 
 export const DTYPE: Dtype = "fp16";   // the one build on both the GPU and the processor (measurements/README.md)
 export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/1`;
@@ -39,7 +39,8 @@ export interface Disk {
   files: number;
   passages: number;
   bytes: number;
-  model: number;
+  model: number;         // the model's files, all builds
+  modelOthers: number;   // of them, other builds than the one used
 }
 
 export class Engine {
@@ -99,8 +100,8 @@ export class Engine {
   measure(): Promise<void> {
     this.measuring ??= (async () => {
       try {
-        const [index, model] = await Promise.all([this.store.size(), modelBytes().catch(() => 0)]);
-        this.disk = { ...index, model };
+        const [index, model] = await Promise.all([this.store.size(), modelSizes(DTYPE).catch(() => ({ total: 0, others: 0 }))]);
+        this.disk = { ...index, model: model.total, modelOthers: model.others };
         this.changed();
       } finally {
         this.measuring = null;

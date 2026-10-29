@@ -37,7 +37,7 @@ export default class DowsePlugin extends Plugin {
     this.statusBar = this.addStatusBarItem();
     this.statusBar.addClass("dowse-status");
     this.statusBar.onClickEvent((event) => this.statusMenu(event));
-    this.statusBar.setAttr("aria-label", "Dowse: pause, resume, settings");
+    this.statusBar.setAttr("aria-label", "Dowse: its menu");
     this.power = new Power(() => { this.engine?.indexer.resume(); this.showStatus(); this.notify(); });
     this.addSettingTab(new DowseSettingTab(this.app, this));
     this.registerDomEvent(document, "keydown", () => (this.lastKey = Date.now()), { capture: true });
@@ -115,6 +115,7 @@ export default class DowsePlugin extends Plugin {
         .setIcon(this.paused ? "play" : "pause").onClick(() => this.setPaused(!this.paused)));
     }
     menu.addItem((item) => item.setTitle("Open Dowse").setIcon(ICON).onClick(() => void this.openSearch()));
+    if (engine) menu.addItem((item) => item.setTitle("Like this note").setIcon("sparkles").onClick(() => void this.openSimilar()));
     menu.addItem((item) => item.setTitle("Dowse settings").setIcon("settings").onClick(() => this.openSettings()));
     menu.showAtMouseEvent(event);
   }

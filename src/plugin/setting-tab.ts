@@ -13,16 +13,17 @@ import { heldText, modelTrouble, readingText } from "./status.ts";
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
 
-/** A button that does what it says only when clicked again within a few seconds: the first click says what it will
- * cost (nothing undoes it). */
+/** A button that does what it says only when clicked again within a few seconds (said, to a screen reader too): the
+ * first click says what it will cost (nothing undoes it). */
 function twice(button: ButtonComponent, label: string, cost: () => string, run: () => Promise<void>): void {
   let armed = 0;
   const reset = () => { button.setButtonText(label); button.buttonEl.removeClass("mod-warning"); };
   reset();
+  button.buttonEl.setAttr("aria-live", "polite");
   button.onClick(async () => {
     if (!armed) {
       button.setButtonText(cost()).setWarning();
-      armed = window.setTimeout(() => { armed = 0; reset(); }, 4000);
+      armed = window.setTimeout(() => { armed = 0; reset(); }, 8000);
       return;
     }
     window.clearTimeout(armed);
@@ -103,9 +104,11 @@ export class DowseSettingTab extends PluginSettingTab {
     this.indexEl?.setDesc(!disk ? "Measured once reading is done." :
       `${disk.files.toLocaleString()} files, ${disk.passages.toLocaleString()} passages: about ${sizeText(disk.bytes)}, ` +
       `in Obsidian's own storage on this computer (not in the vault, so it isn't synced).`);
-    this.modelEl?.setDesc(!disk ? "Measured once reading is done." : (disk.model ? `${sizeText(disk.model)} in ` +
-      `Obsidian's cache, for all your vaults.` : "Not downloaded on this computer.") + " It stays there if you remove " +
-      "the plugin: to remove it, turn Dowse off for this vault (below), then remove it there.");
+    const others = disk?.modelOthers ? `: ${sizeText(disk.model - disk.modelOthers)} the model Dowse uses, ` +
+      `${sizeText(disk.modelOthers)} other builds of it` : "";
+    this.modelEl?.setDesc(!disk ? "Measured once reading is done." : !disk.model ? "Not downloaded on this computer."
+      : `${sizeText(disk.model)} in Obsidian's cache${others}, for all your vaults. It stays there if you remove the ` +
+        "plugin: to remove it, turn Dowse off for this vault (below), then remove it there.");
   }
 
   private onView(el: HTMLElement): void {
@@ -179,18 +182,18 @@ export class DowseSettingTab extends PluginSettingTab {
     this.showDisk();
     new Setting(el).setName("Read everything again")
       .setDesc("Clears this vault's index and reads the vault again from the start.")
-      .addButton((button) => twice(button, "Read again", () => `Click again (${this.files()})`, async () => {
+      .addButton((button) => twice(button, "Read again", () => `Click again to read ${this.files()} again`, async () => {
         await this.plugin.turnOff(true);
         await this.plugin.turnOn();
         this.display();
       }));
     new Setting(el).setName("Turn Dowse off for this vault")
-      .setDesc("Stops reading. Keep the index to turn it back on instantly, or delete it.")
+      .setDesc("Stops reading. Keep the index to turn it back on instantly, or delete it. Your notes are never touched.")
       .addButton((button) => button.setButtonText("Turn off, keep the index").onClick(async () => {
         await this.plugin.turnOff(false);
         this.display();
       }))
-      .addButton((button) => twice(button, "Turn off and delete", () => `Click again to delete (${this.files()})`,
+      .addButton((button) => twice(button, "Turn off and delete", () => "Click again to delete the index",
         async () => {
           await this.plugin.turnOff(true);
           this.display();

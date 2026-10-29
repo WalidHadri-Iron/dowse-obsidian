@@ -21,13 +21,22 @@ async function each(visit: (cache: Cache, request: Request) => Promise<void>): P
 
 /** The model's files on this computer, in bytes. */
 export async function modelBytes(): Promise<number> {
-  let bytes = 0;
+  return (await modelSizes("fp16")).total;
+}
+
+/** The model's files on this computer: all of them, and those of other builds than `dtype` (the one Dowse uses:
+ * another may have been downloaded by an earlier version, or for a measurement). */
+export async function modelSizes(dtype: string): Promise<{ total: number; others: number }> {
+  let total = 0, others = 0;
   await each(async (cache, request) => {
     const response = await cache.match(request);
     const length = Number(response?.headers.get("content-length"));
-    bytes += Number.isFinite(length) && length > 0 ? length : (await response?.blob())?.size ?? 0;
+    const bytes = Number.isFinite(length) && length > 0 ? length : (await response?.blob())?.size ?? 0;
+    total += bytes;
+    const file = request.url.split("/").pop() ?? "";
+    if (/\.onnx(_data)?$/.test(file) && !file.includes(`_${dtype}.`)) others += bytes;
   });
-  return bytes;
+  return { total, others };
 }
 
 /** Removes the model's files from this computer (only the model's: not other plugins' caches); answers the bytes. */

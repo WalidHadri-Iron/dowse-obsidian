@@ -3,17 +3,19 @@
 import { relevance } from "../wall/search-relevance.ts";
 import { scoreSize } from "../wall/score-size.ts";
 
-/** Presentation only: never move files between their established aisle coordinates. */
+/** Presentation only: never move files between their established aisle coordinates. When there are clear matches,
+ * what's only close recedes (a little smaller, dimmer) so the eye goes to the matches; without them, it's the answer. */
 export function exploreAppearance(path: string, found: ReadonlyMap<string, number> | null,
   matches: ReadonlySet<string> | null, clear: boolean, score: number | undefined, best: number, selected: string | null) {
   const state = relevance(path, found, clear && (matches === null || matches.has(path)));
   const activeSelection = selected !== null && !!found?.has(selected);
   return {
     state,
-    size: state === "neutral" ? 1 : state === "other" ? .78 : state === "match" ? scoreSize(score, best, .9, 1.5) : 1,
-    light: state === "neutral" ? 1 : state === "other" ? .35 : activeSelection && path !== selected ? .82 : 1,
+    size: state === "neutral" ? 1 : state === "other" ? .78 : state === "match" ? scoreSize(score, best, .9, 1.5) : clear ? .9 : 1,
+    light: state === "neutral" ? 1 : state === "other" ? .35 : state === "closest" && clear ? .6
+      : activeSelection && path !== selected ? .82 : 1,
     lift: state === "match" ? .35 : 0,
-    outline: state === "neutral" ? 0 : state === "other" ? .22 : .95,
+    outline: state === "neutral" ? 0 : state === "other" ? .22 : state === "closest" && clear ? .55 : .95,
   };
 }
 
