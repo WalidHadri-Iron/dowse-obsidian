@@ -1,8 +1,11 @@
-// Pictures for the wall: an image straight from the vault (Obsidian's own URL for it), a PDF's page drawn by the pdf.js
-// Obsidian carries, a video's still at the moment that matched; kept a while (a few hundred, then the oldest go).
+// Pictures for the wall and the floor: an image straight from the vault (Obsidian's own URL for it), a PDF's page drawn
+// by the pdf.js Obsidian carries, a video's still at the moment that matched, a note's or a canvas's page drawn as it
+// reads (page.ts, in the theme's colours, at the passage a search matched); kept a while (a few hundred, then the
+// oldest go).
 
 import { type App, loadPdfJs } from "obsidian";
 import type { Piece } from "../ui/wall/piece.ts";
+import { drawPage } from "./page.ts";
 
 const KEEP = 200;
 
@@ -14,10 +17,22 @@ export class Pictures {
     this.app = app;
   }
 
-  picture = (piece: Piece, pixels: number): Promise<string | null> => {
+  picture = (piece: Piece, pixels: number, terms: readonly string[] = []): Promise<string | null> => {
     const file = this.app.vault.getFileByPath(piece.path);
     if (!file) return Promise.resolve(null);
     if (piece.kind === "image") return Promise.resolve(this.app.vault.getResourcePath(file));
+    if (piece.kind === "note" || piece.kind === "canvas") {
+      const dark = document.body.hasClass("theme-dark");   // (a page in the theme's colours: another theme, another page)
+      const from = piece.kind === "note" ? piece.loc ?? 0 : 0;
+      const key = `${piece.path}#${from}@${pixels}|${dark}|${file.stat.mtime}|${terms.join(" ")}`;
+      let made = this.made.get(key);
+      if (!made) {
+        made = drawPage(this.app, file, piece.kind, pixels, from, terms).catch(() => null);
+        this.made.set(key, made);
+        this.trim();
+      }
+      return made;
+    }
     if (piece.kind !== "pdf" && piece.kind !== "video") return Promise.resolve(null);
     const key = `${piece.path}#${piece.loc ?? (piece.kind === "pdf" ? 1 : 0)}@${pixels}`;
     let made = this.made.get(key);

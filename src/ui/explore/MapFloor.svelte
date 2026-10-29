@@ -618,7 +618,14 @@
   $effect(() => {   // another theme: the page's colors switch first
     void dark;
     if (!renderer) return;
-    const themed = requestAnimationFrame(() => { floor(); for (const c of cases) if (c.fallback && c.pixels) card(c, c.pixels); wake(); });
+    const themed = requestAnimationFrame(() => {
+      floor();
+      for (const c of cases) {
+        if (c.fallback && c.pixels) card(c, c.pixels);
+        else if (c.piece.kind === "note" || c.piece.kind === "canvas") { c.pixels = 0; c.retryAt = 0; }   // its page, again, in these colours
+      }
+      wake();
+    });
     return () => cancelAnimationFrame(themed);
   });
 

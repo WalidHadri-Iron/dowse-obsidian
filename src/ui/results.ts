@@ -10,7 +10,8 @@ export const KIND_NAME: Record<string, string> = {
 export const KIND_ICON: Record<string, string> = {
   note: "file-text", pdf: "file", canvas: "layout-dashboard", image: "image", audio: "audio-lines", video: "film",
 };
-export const VISUAL = new Set(["image", "pdf", "video"]);
+// The kinds whose face is a picture: images, PDFs' and videos' own; notes' and canvases' pages, drawn (plugin/page.ts)
+export const VISUAL = new Set(["image", "pdf", "video", "note", "canvas"]);
 
 /** What the wall and the list need of a file, with or without a search (a recent file has no place in it). */
 export interface Shown {

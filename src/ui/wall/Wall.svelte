@@ -139,7 +139,7 @@
     const version = ++vitrine.faceVersion;
     const drawn = () => setFace(vitrine, cardTexture(piece, dark, vitrine.pixels));
     if (!piece.visual) return drawn();
-    void picture(piece, vitrine.pixels, piece.kind === "pdf" && !piece.back ? terms : []).then((url) => {
+    void picture(piece, vitrine.pixels, (piece.kind === "pdf" || piece.kind === "note") && !piece.back ? terms : []).then((url) => {
       if (vitrine.leaving || vitrines.get(piece.key) !== vitrine || vitrine.faceVersion !== version) return;
       if (url) show(url); else drawn();
     }, drawn);
@@ -266,7 +266,7 @@
       vitrine.tag.dataset.layer = picked ? "foreground" : "rack";
       vitrine.tag.dataset.relevance = wallRelevance(searching, piece.back, clear && !piece.closest);
       const faceKey = JSON.stringify([piece.loc, piece.excerpt, piece.name, piece.kind, piece.visual, vitrine.pixels,
-                                      piece.kind === "pdf" && !piece.back ? terms : []]);
+                                      (piece.kind === "pdf" || piece.kind === "note") && !piece.back ? terms : [], dark]);
       if (vitrine.faceKey !== faceKey) {
         vitrine.faceKey = faceKey;
         face(vitrine);
@@ -703,7 +703,11 @@
     if (!active) return;
     void dark;
     if (renderer) {
-      const themedFrame = requestAnimationFrame(() => { floor(); wake(); });   // after the page's colors switched
+      const themedFrame = requestAnimationFrame(() => {   // after the page's colors switched
+        floor();
+        for (const vitrine of vitrines.values()) if (vitrine.piece.kind === "note" || vitrine.piece.kind === "canvas") face(vitrine);
+        wake();
+      });
       return () => cancelAnimationFrame(themedFrame);
 
     }

@@ -318,7 +318,8 @@
         {#if mapPieces.length}
           <MapFloor bind:this={floor} pieces={mapPieces} aisles={mapAisles} {found} {scores} {clear} {matches} {dark}
                     selected={chosen}
-                    picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px, [])}
+                    picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px,
+                                                               found?.has(piece.path) ? answer?.terms ?? [] : [])}
                     onselect={(piece) => (chosen = piece.path)}
                     onopen={(piece) => controller.open(shownFor(piece.path), false)}
                     onhover={(event, piece, target) => controller.hover(event, piece.path, target)}

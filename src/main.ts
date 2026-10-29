@@ -184,7 +184,7 @@ export default class DowsePlugin extends Plugin {
       similar: async (path) => this.engine ? this.engine.search.similar(path) : empty,
       recent: async () => this.engine ? this.engine.search.recent() : [],
       explore: async () => this.engine ? this.engine.search.explore() : { aisles: [], pieces: [], total: 0, membership: {} },
-      picture: (piece, pixels) => this.pictures.picture(piece, pixels),
+      picture: (piece, pixels, terms) => this.pictures.picture(piece, pixels, terms),
       open: (shown, newTab) => void openShown(this.app, shown, newTab),
       link: (path) => linkTo(this.app, path, this.app.workspace.getActiveFile()?.path ?? ""),
       hover: (event, path, target) => this.app.workspace.trigger("hover-link", {
