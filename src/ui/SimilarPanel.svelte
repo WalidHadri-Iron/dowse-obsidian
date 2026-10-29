@@ -16,9 +16,18 @@
   let linked = $state(new Set<string>());
   let unlinkedOnly = $state(stored());
   let note = $state("");
+  let strongCount = $state(0);   // how many of `found` are clearly alike (the rest only close)
+  let more = $state(false);
   let asked = 0;
 
-  const items = $derived(unlinkedOnly ? found.filter((item) => !linked.has(item.path)) : found);
+  // The clearly alike first, then the first few only close, the rest when asked (as the Dowse tab's list)
+  const CLOSE_SHOWN = 5;
+  const filtered = $derived(unlinkedOnly ? found.filter((item) => !linked.has(item.path)) : found);
+  const strong = $derived.by(() => {
+    const clear = new Set(found.slice(0, strongCount).map((item) => item.path));
+    return filtered.filter((item) => clear.has(item.path)).length;
+  });
+  const items = $derived(more ? filtered : filtered.slice(0, strong > 0 ? strong + CLOSE_SHOWN : 10));
 
   async function refresh(): Promise<void> {
     const mine = ++asked;
@@ -28,6 +37,8 @@
     const answer = await controller.similar(path);
     if (mine !== asked) return;
     found = answer.hits.slice(0, 20).map(shownOf);
+    strongCount = answer.strong;
+    more = false;
     linked = controller.linked(path);
     note = found.length ? "" : "Nothing like it yet (it may not be read yet).";
   }
@@ -74,7 +85,8 @@
     </div>
   {/if}
   {#if items.length}
-    <ResultList {items} compact {controller}>
+    <ResultList {items} compact {controller} {strong} more={more ? 0 : filtered.length - items.length}
+                onmore={() => (more = true)}>
       {#snippet aside(item: Shown)}
         {#if linked.has(item.path)}
           <span role="img" aria-label="Linked already" title="Linked already"><Icon name="link" size={14} /></span>

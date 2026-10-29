@@ -58,14 +58,21 @@
   const hits = $derived(searching && answer ? answer.hits.map(shownOf) : []);
   const clear = $derived(!answer || answer.strong > 0);
   const kinds = $derived(KINDS.find(([id]) => id === kind)?.[2] ?? []);
-  const shown: Shown[] = $derived(searching ? hits : recent);
+  // Before a search, the vault's latest files, of the kinds chosen (the chips filter them too)
+  const latest = $derived(kinds.length ? recent.filter((item) => kinds.includes(item.kind)) : recent);
+  // A search's list: its matches and the first few that are only close; the rest when asked (each is noise to most)
+  const CLOSE_SHOWN = 5;
+  let more = $state(false);
+  const cut = $derived(!answer ? hits.length : answer.strong > 0 ? answer.strong + CLOSE_SHOWN : 10);
+  const listed = $derived(more ? hits : hits.slice(0, cut));
+  const shown: Shown[] = $derived(searching ? (layout === "list" ? listed : hits) : latest);
 
   const pieces = $derived.by(() => {
-    if (!searching) return recent.map((item) => pieceOf(item, { strong: true }));
+    if (!searching) return latest.map((item) => pieceOf(item, { strong: true }));
     const strong = answer?.strong ?? 0;
     const found = hits.map((hit, i) => pieceOf(hit, { strong: clear && i < strong, closest: !clear || i >= strong, score: hit.score }));
     const seen = new Set(hits.map((h) => h.path));
-    const rest = recent.filter((item) => !seen.has(item.path)).map((item) => pieceOf(item, { strong: false, back: true }));
+    const rest = latest.filter((item) => !seen.has(item.path)).map((item) => pieceOf(item, { strong: false, back: true }));
     return [...found, ...rest];
   });
 
@@ -142,7 +149,7 @@
     busy = true;
     try {
       const found = await controller.search(query, kinds);
-      if (mine === asked) { answer = found; selected = 0; }
+      if (mine === asked) { answer = found; selected = 0; more = false; }
     } finally {
       if (mine === asked) busy = false;
     }
@@ -315,14 +322,16 @@
           <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
         {/if}
       {:else if layout === "wall" && pieces.length}
-        <Wall {pieces} collectionKeys={recent.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
+        <Wall {pieces} collectionKeys={latest.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
               terms={answer?.terms ?? []} {searching} {clear} {dark}
               picture={(piece, px, terms) => controller.picture(piece, px, terms)}
               onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item) controller.open(item, false); }}
               ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
         <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)}
-                    strong={searching && answer ? answer.strong : null} id={listId} />
+                    strong={searching && answer ? answer.strong : null} id={listId}
+                    more={searching && !more && hits.length > shown.length ? hits.length - shown.length : 0}
+                    onmore={() => (more = true)} />
       {:else if searching && answer && !busy}
         <div class="dowse-empty">Nothing in this vault matches “{query}”.</div>
       {:else if !searching}

@@ -168,7 +168,7 @@
       sign.className = "aisle-sign";
       sign.dataset.groupId = aisle.id ?? String(aisle.index);
       sign.innerHTML = `<b></b><span></span>`;
-      sign.querySelector("b")!.textContent = aisle.label;
+      sign.querySelector("b")!.textContent = aisle.id === "rest" ? "Unsorted" : aisle.label;   // (not "Everything else": the legend's)
       sign.querySelector("span")!.textContent = `${aisle.count.toLocaleString()} file${aisle.count === 1 ? "" : "s"}`;
       sign.title = aisle.about || aisle.label;
       sign.onclick = () => goTo(aisle.index);
@@ -680,7 +680,7 @@
       {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
       {#if clear && found.size > (matches?.size ?? 0)}<span class="closest">Close</span>{/if}
-      <span class="other">Everything else</span>
+      <span class="other">Other files</span>
       {#if found.size && clear}<span class="size-note">Larger = stronger match</span>{/if}
       {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>

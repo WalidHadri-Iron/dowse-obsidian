@@ -44,7 +44,7 @@ export function titleOf(shown: Shown): string {
 export function placeOf(shown: Shown): string | null {
   if (shown.loc === null) return null;
   if (shown.kind === "pdf") return `page ${shown.loc}`;
-  if (shown.kind === "note") return `line ${shown.loc + 1}`;
+  if (shown.kind === "note") return shown.loc > 0 ? `line ${shown.loc + 1}` : null;   // (its start: nothing to say)
   if (shown.kind === "audio" || shown.kind === "video") {
     const s = Math.round(shown.loc);
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -77,5 +77,20 @@ export function runs(excerpt: string): { text: string; marked: boolean }[] {
 }
 
 export function shownOf(hit: Hit): Shown {
-  return { path: hit.path, kind: hit.kind, loc: hit.loc, locEnd: hit.locEnd, excerpt: hit.excerpt, info: hit.info, score: hit.score };
+  return { path: hit.path, kind: hit.kind, loc: hit.loc, locEnd: hit.locEnd, excerpt: hit.excerpt && readable(hit.excerpt),
+           info: hit.info, score: hit.score };
+}
+
+/** An excerpt as it reads, not as it's written: Markdown's tables, emphasis, code marks, links and headings' hashes
+ * taken out (the query's « » marks kept). */
+export function readable(excerpt: string): string {
+  return excerpt
+    .replace(/!?\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")         // [[note|shown]] → shown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")                   // [text](url) → text
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")                             // heading hashes
+    .replace(/\*\*|__|(?<!\w)[*_](?=\S)|(?<=\S)[*_](?!\w)|`+/g, "")  // emphasis, code
+    .replace(/\s*\|[\s|:-]*\|\s*|\s*\|\s*/g, " · ")             // table cells
+    .replace(/^(\s*·\s*)+|(\s*·\s*)+$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }

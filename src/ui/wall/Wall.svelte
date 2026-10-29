@@ -403,6 +403,7 @@
       const full = right - x >= 110 && (index === hovered || index === selected
         || (vitrine.tag.dataset.layer === "foreground" && index < 6));
       if (x < 4 || right > width - 4 || top < 0 || y > height) { tag.style.opacity = "0"; return; }   // half out: no tag
+      if (!full && !searching) { tag.style.opacity = "0"; return; }   // a number alone, before a search, would mean nothing
       tag.style.opacity = "1";
       tag.style.maxWidth = `${Math.max(right - x - 12, 80)}px`;
       tag.style.transform = `translate(${x}px, ${y}px) translateY(-100%)`;
@@ -413,7 +414,7 @@
       tag.classList.toggle("number", !full);
       // a small tag's machine line is kind and place; the folder is on the big one, the list and the viewing table
       const text = full ? (big ? vitrine.piece.line : vitrine.piece.line.split(" · ").slice(0, 2).join(" · ")) : "";
-      const key = `${vitrine.piece.key}|${index}|${text}`;
+      const key = `${vitrine.piece.key}|${index}|${text}|${searching}`;
       if (tag.dataset.key !== key) {
         tag.dataset.key = key;
         tag.innerHTML = "";
@@ -423,7 +424,8 @@
           const name = document.createElement("b");
           name.textContent = vitrine.piece.name;
           const line = document.createElement("span");
-          line.append(number, text);
+          if (searching) line.append(number);   // (a search's rank; before one, no number)
+          line.append(text);
           tag.append(name, line);
         } else tag.append(number);
       }
@@ -711,7 +713,7 @@
       {:else if clear}<span class="match">Matches</span>
       {:else}<span class="closest">{CLOSEST_LABEL}</span>{/if}
       {#if clear && pieces.some((piece) => piece.closest)}<span class="closest">Close</span>{/if}
-      <span class="other">Everything else</span>
+      <span class="other">Other files</span>
       {#if clear && pieces.some((piece) => !piece.back)}<span class="size-note">Larger = stronger match</span>{/if}
     {:else}<span class="navigation">Scroll to zoom · drag to move{ondragout ? " · drag a selected file into a note to link it" : ""}</span>{/if}
   </div>

@@ -102,7 +102,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   async getSuggestions(query: string): Promise<Shown[]> {
     if (!query.trim()) return this.recent;
     const answer = await this.controller.search(query, []);
-    const items = answer.hits.slice(0, 20).map(shownOf);
+    const items = answer.hits.slice(0, answer.strong > 0 ? answer.strong + 5 : 10).map(shownOf);   // (the rest: in the tab)
     this.firstClose = answer.strong > 0 && answer.strong < items.length ? items[answer.strong] : null;
     if (answer.strong > 0) for (const item of items.slice(answer.strong)) this.onlyClose.add(item);
     return items;

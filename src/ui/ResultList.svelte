@@ -6,7 +6,8 @@
   import { KIND_ICON, lineOf, runs, titleOf, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
 
-  let { items, selected = -1, compact = false, controller, onselect, aside, strong = null, id = undefined }: {
+  let { items, selected = -1, compact = false, controller, onselect, aside, strong = null, id = undefined, more = 0,
+        onmore }: {
     items: Shown[];
     selected?: number;
     compact?: boolean;       // the sidebar's: no excerpts
@@ -15,6 +16,8 @@
     aside?: Snippet<[Shown]>;   // at the row's end (the sidebar's: linked, or a button to link it)
     strong?: number | null;     // a search's matches, the first so many (null: not a search)
     id?: string;                // the listbox's (the search field points into it); its options' are `${id}-${index}`
+    more?: number;              // results left out (only close): a row offers them
+    onmore?: () => void;
   } = $props();
   // The keyboard: one row in the Tab order (the selected one, else the first), ↑/↓ from row to row, Enter opens
   let focusAt = $state(0);
@@ -68,3 +71,6 @@
     </div>
   {/each}
 </div>
+{#if more && onmore}
+  <button class="dowse-more" onclick={onmore}>Show {more} more that {more === 1 ? "is" : "are"} only close</button>
+{/if}
