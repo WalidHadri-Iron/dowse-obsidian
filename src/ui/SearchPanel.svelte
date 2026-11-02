@@ -46,6 +46,8 @@
   // svelte-ignore state_referenced_locally
   let reading = $state(controller.reading());
   // svelte-ignore state_referenced_locally
+  let parts = $state(controller.parts());
+  // svelte-ignore state_referenced_locally
   const counts = controller.counts();   // (for the first screen, and the kinds' chips)
   // The kinds this vault has (and the one chosen): a chip for a kind with no file in it is a choice that can't matter
   const kindsHere = $derived(KINDS.filter(([id, , of]) => !of.length || of.some((k) => (counts[k] ?? 0) > 0) || id === kind));
@@ -128,6 +130,27 @@
     return selected >= 0 && selected < hits.length ? `${listId}-${selected}` : undefined;
   });
   const many = (n: number | undefined, one: string, more: string) => `${(n ?? 0).toLocaleString()} ${n === 1 ? one : more}`;
+  const both = (a: string, b: string) => [a, b].filter((x) => !x.startsWith("0 ")).join(" and ");
+
+  // The first screen: the model's parts for this vault's pictures and sound, offered with their size (checked when the
+  // vault has such files: unread, they're found by their names only, and a search for what they show finds nothing)
+  let wantImages = $state(Boolean(counts.image || counts.video));
+  let wantSound = $state(Boolean(counts.audio || counts.video));
+
+  // Files only found by name (their part is off), said where they may be what's looked for: their kind chosen, among
+  // a search's results, or a search with no clear match (what it describes may be in a picture or a recording)
+  const unread = $derived.by(() => {
+    const out: { part: "images" | "sound"; text: string; button: string }[] = [];
+    const wanted = (k: string[]) => kinds.some((x) => k.includes(x))
+      || (searching && !!answer && !busy && (answer.strong === 0 || answer.hits.some((h) => k.includes(h.kind))));
+    if (!parts.images && (counts.image || counts.video) && wanted(["image", "video"]))
+      out.push({ part: "images", button: "Read images (336 MB)",
+                 text: `${both(many(counts.image, "image", "images"), many(counts.video, "video", "videos"))}: found by their names only, until Dowse reads what they show.` });
+    if (!parts.sound && (counts.audio || counts.video) && wanted(["audio", "video"]))
+      out.push({ part: "sound", button: "Read sound (587 MB)",
+                 text: `${both(many(counts.audio, "recording", "recordings"), many(counts.video, "video", "videos"))}: found by their names only, until Dowse listens to them.` });
+    return out;
+  });
 
   const summary = $derived.by(() => {
     if (!on) return "";
@@ -147,15 +170,24 @@
     return (matches ? `${matches} match${matches === 1 ? "" : "es"}` : CLOSEST_LABEL) + words;
   });
 
-  async function run(): Promise<void> {
+  /** The search asked. `again`: the same one, asked again as more of the vault is read (what's chosen stays chosen,
+   * what's opened stays open, nothing shows as searching). */
+  async function run(again = false): Promise<void> {
     const mine = ++asked;
     if (!query.trim()) { answer = null; busy = false; selected = -1; return; }
-    busy = true;
+    const kept = again ? shown[selected]?.path : undefined;
+    if (!again) busy = true;
     try {
       const found = await controller.search(query, kinds);
       if (mine === asked) {
-        answer = found; selected = 0; more = false;
-        if (layout === "map") chosen = ranked[0]?.path ?? null;   // the first result named on the floor at once
+        answer = found;
+        if (again) {
+          const at = kept ? found.hits.findIndex((h) => h.path === kept) : -1;
+          selected = at >= 0 ? at : selected >= 0 ? 0 : -1;
+        } else {
+          selected = 0; more = false;
+          if (layout === "map") chosen = ranked[0]?.path ?? null;   // the first result named on the floor at once
+        }
       }
     } finally {
       if (mine === asked) busy = false;
@@ -229,12 +261,14 @@
       status = own(controller.status());
       dark = controller.dark();
       reading = controller.reading();
+      parts = controller.parts();
       if (on && !wasOn) { void loadRecent(); if (layout === "map") void loadMap(); }   // just turned on: the files listed
       const ready = controller.ready();
       if (ready && !lastReady && answer && !answer.meaning) void run();   // the model came: by meaning now
       lastReady = ready;
     });
     const unfollow = controller.follow(() => {   // remade in the background as the vault is read (not polled)
+      if (searching && answer && !busy) void run(true);   // what's newly read may be what's looked for
       if (!searching) void loadRecent();
       if (layout === "map") void loadMap();
     });
@@ -253,12 +287,26 @@
         <li><b>It reads this vault in the background</b>: {many(counts.note, "note", "notes")},
           {many(counts.pdf, "PDF", "PDFs")} and {many(counts.canvas, "canvas", "canvases")}. You can keep working, search
           what's read so far, and pause it.</li>
-        <li><b>Then it keeps up as you write.</b> Images, recordings and videos are found by name; Settings › Dowse can
-          read what's in them too.</li>
+        <li><b>Then it keeps up as you write.</b></li>
         <li><b>Beside your notes</b>, “Like this note” shows what's like the one open, and links it in a click (the
           status bar's Dowse menu opens it).</li>
       </ol>
-      <button class="mod-cta" onclick={() => controller.turnOn()}>Turn on for this vault</button>
+      {#if counts.image || counts.video || counts.audio}
+        <div class="dowse-parts">
+          {#if counts.image || counts.video}
+            <label><input type="checkbox" bind:checked={wantImages} />
+              <span>Read what its {both(many(counts.image, "image", "images"), many(counts.video, "video", "videos"))} show
+                <span class="dowse-quiet">· 336 MB more</span></span></label>
+          {/if}
+          {#if counts.audio || counts.video}
+            <label><input type="checkbox" bind:checked={wantSound} />
+              <span>Listen to its {both(many(counts.audio, "recording", "recordings"), many(counts.video, "video", "videos"))}
+                <span class="dowse-quiet">· 587 MB more</span></span></label>
+          {/if}
+          <span class="dowse-quiet">Unchecked, they're found by their names only (Settings › Dowse can turn them on later).</span>
+        </div>
+      {/if}
+      <button class="mod-cta" onclick={() => controller.turnOn({ images: wantImages, sound: wantSound })}>Turn on for this vault</button>
       <p class="dowse-quiet">Folders and files can be left out (right-click, “Dowse: stop searching”), and Dowse turned
         off or its index deleted in Settings › Dowse.</p>
     </div>
@@ -302,6 +350,12 @@
           {#if strip.part !== null}<div class="dowse-strip-bar" style:--part={strip.part}></div>{/if}
         </div>
       {/if}
+      {#each unread as notice (notice.part)}
+        <div class="dowse-unread">
+          <span>{notice.text}</span>
+          <button onclick={() => void controller.setParts(notice.part === "images" ? { images: true } : { sound: true })}>{notice.button}</button>
+        </div>
+      {/each}
       <div class="dowse-summary" aria-live="polite">{summary}</div>
     </div>
     {#if layout !== "list" && searching && hits.length}

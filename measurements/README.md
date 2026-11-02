@@ -58,3 +58,15 @@ Told from how fast this computer has read each kind of file so far (`Indexer.est
 the test notes (280 files, 1,741 passages) on the RTX 4070 Ti, 2026-10-29: first told after 8.6 s, 54 s left
 (31 s were); then 33 s for 25, 19 s for 17, 7 s for 9. High at first (the first files include the model's warm-up),
 right within seconds after; shown rounded ("less than a minute left", "about 6 min left").
+
+## Pictures and sound
+
+Dowse's own queries on its testbed's photos, video and recordings (evals/testbed.json and hard.json, the 48 whose
+answers are all pictures or sound: images, the video's moments, the podcast's segments, a voice memo; paraphrases and
+other languages), read by the plugin in Obsidian (RTX 4070 Ti), 2026-11-02. Alone (19 files): the right file first for
+47 of 48; the miss ("video with animals") found nothing at all, as z is told against too few files. Among Obsidian's
+help and the test notes (299 files): the right file first for 44 and among the first five for all 48; first instead:
+"Sleep log" for "where they talk about sleep", "Slides" for "slideshow with a zebra", a note with the word "dog" for
+"a dog" (z 4.0 against the photo's 5.1: Dowse's ranking, the same here), the 1968 demo's recording for "narrator
+introducing a wildlife show". With the model's image and sound parts off (the default before), none of them is read:
+they're found by their names only.

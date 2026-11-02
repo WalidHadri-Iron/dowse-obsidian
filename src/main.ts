@@ -179,7 +179,9 @@ export default class DowsePlugin extends Plugin {
     const empty = { query: "", hits: [], strong: 0, terms: [], meaning: false, ms: 0 };
     return {
       on: () => this.settings.on && this.engine !== null,
-      turnOn: () => this.turnOn(),
+      turnOn: async (parts) => { if (parts) await this.setParts(parts); await this.turnOn(); },
+      parts: () => ({ images: this.settings.images, sound: this.settings.sound }),
+      setParts: (change) => this.setParts(change),
       search: async (query, kinds) => this.engine ? this.engine.search.search(query, { kinds }) : { ...empty, query },
       similar: async (path) => this.engine ? this.engine.search.similar(path) : empty,
       recent: async () => this.engine ? this.engine.search.recent() : [],

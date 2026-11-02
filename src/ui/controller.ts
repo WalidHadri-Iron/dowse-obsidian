@@ -21,7 +21,12 @@ export interface Reading {
 export interface Controller {
   /** Dowse is on for this vault (else the views offer to turn it on). */
   on(): boolean;
-  turnOn(): Promise<void>;
+  /** On for this vault; `parts`: the model's image and sound parts turned on (or not) first. */
+  turnOn(parts?: { images: boolean; sound: boolean }): Promise<void>;
+  /** The model's parts that are on: images (what images, PDF scans and videos show), sound (what's said and heard). */
+  parts(): { images: boolean; sound: boolean };
+  /** A part turned on or off (on: what waited for it is read; it's downloaded the first time). */
+  setParts(change: { images?: boolean; sound?: boolean }): Promise<void>;
   search(query: string, kinds: string[]): Promise<Answer>;
   similar(path: string): Promise<Answer>;
   recent(): Promise<Shown[]>;
