@@ -79,18 +79,34 @@ jobs:
           cp -R "$RUNNER_TEMP/dowse-obsidian-mount/Obsidian.app" "$RUNNER_TEMP/Obsidian.app"
           hdiutil detach "$RUNNER_TEMP/dowse-obsidian-mount"
           echo "OBSIDIAN_EXECUTABLE=$RUNNER_TEMP/Obsidian.app/Contents/MacOS/Obsidian" >> "$GITHUB_ENV"
-      - name: Native integration, real CPU inference and larger vault
+      - name: Native smoke
         shell: bash
         env:
           DOWSE_STRESS_FILES: '5000'
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             xvfb-run -a npm run smoke
-            xvfb-run -a npm run test:native-model
-            xvfb-run -a npm run test:vault
           else
             npm run smoke
+          fi
+      - name: Real CPU inference
+        shell: bash
+        env:
+          DOWSE_STRESS_FILES: '5000'
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a npm run test:native-model
+          else
             npm run test:native-model
+          fi
+      - name: Larger vault reliability
+        shell: bash
+        env:
+          DOWSE_STRESS_FILES: '5000'
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a npm run test:vault
+          else
             npm run test:vault
           fi
       - uses: actions/upload-artifact@v4

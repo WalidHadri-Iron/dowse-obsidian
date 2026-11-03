@@ -22,7 +22,7 @@ export async function native(label, prepare = async () => {}) {
   const artifacts = resolve(process.env.DOWSE_ARTIFACTS ?? join(repo, ".cache/release-validation", `${label}-${process.platform}`));
   await mkdir(plugin, { recursive: true }); await mkdir(profile); await mkdir(artifacts, { recursive: true });
   for (const file of ["main.js", "manifest.json", "styles.css"]) await copyFile(join(repo, file), join(plugin, file));
-  await writeFile(join(vault, ".obsidian/community-plugins.json"), '["dowse"]');
+  await writeFile(join(vault, ".obsidian/community-plugins.json"), '[]');
   await writeFile(join(plugin, "data.json"), JSON.stringify({ on: false, off: [], images: false, sound: false, batteryPause: false }));
   await writeFile(join(profile, "obsidian.json"), JSON.stringify({ vaults: { dowseTest: { path: vault, ts: Date.now(), open: true } } }));
   await prepare(vault);
@@ -57,9 +57,15 @@ export async function native(label, prepare = async () => {}) {
     await until(() => page.evaluate(() => {
       const trust = [...document.querySelectorAll("button")].find(b => /trust author/i.test(b.textContent));
       if (trust && !window.__dowseTestTrusted) { window.__dowseTestTrusted = true; trust.click(); }
-      return !!window.app?.plugins?.plugins?.dowse?.fileEvents;
-    }), "The production plugin did not load");
-    await until(() => page.evaluate(() => !!window.app?.workspace?.layoutReady), "Vault layout did not become ready");
+      return !!window.app?.workspace?.layoutReady && !!app.plugins?.manifests?.dowse;
+    }), "The test vault did not finish startup");
+    // Enabling the known production bundle after startup avoids racing Obsidian's initial plugin loader/trust UI.
+    // The empty persisted plugin list also prevents an automatic load from overlapping this explicit one.
+    await page.evaluate(async () => {
+      if (!app.plugins.isEnabled()) await app.plugins.setEnable(true);
+      await app.plugins.enablePluginAndSave("dowse");
+    });
+    await until(() => page.evaluate(() => !!app.plugins.plugins.dowse?.controller), "The production plugin did not load");
     await writeFile(join(artifacts, "launch.json"), JSON.stringify({ platform: process.platform, executable, root, pid: child.pid }));
     return { page, browser, root, profile, vault, artifacts, errors, consoleErrors, close };
   } catch (error) { await close(); throw error; }

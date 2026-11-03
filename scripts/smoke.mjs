@@ -17,7 +17,7 @@ const profile = join(root, "profile"), vault = join(root, "vault"), plugin = joi
 const artifacts = resolve(process.env.DOWSE_SMOKE_ARTIFACTS ?? join(repo, ".cache", "smoke"));
 mkdirSync(plugin, { recursive: true }); mkdirSync(profile, { recursive: true }); mkdirSync(artifacts, { recursive: true });
 for (const file of ["main.js", "manifest.json", "styles.css"]) copyFileSync(join(repo, file), join(plugin, file));
-writeFileSync(join(vault, ".obsidian", "community-plugins.json"), '["dowse"]');
+writeFileSync(join(vault, ".obsidian", "community-plugins.json"), '[]');
 writeFileSync(join(plugin, "data.json"), JSON.stringify({ on: false, off: [], images: false, sound: false }));
 writeFileSync(join(profile, "obsidian.json"), JSON.stringify({ vaults: { dowseSmoke: { path: vault, ts: Date.now(), open: true } } }));
 for (const [path, text] of Object.entries({
@@ -36,6 +36,7 @@ child.stderr.on("data", b => { stderr += b.toString(); });
 const errors = [];
 let browser;
 let page;
+let stage = "launch";
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test, message, ms = 60000) {
   const end = Date.now() + ms;
@@ -53,11 +54,18 @@ try {
   await until(async () => page.evaluate(() => {
     const trust = [...document.querySelectorAll("button")].find(b => /trust author/i.test(b.textContent));
     if (trust && !window.__dowseTestTrusted) { window.__dowseTestTrusted = true; trust.click(); }
-    return !!window.app?.plugins?.plugins?.dowse?.fileEvents;
-  }), "Plugin did not load");
-  await until(() => page.evaluate(() => !!window.app?.workspace?.layoutReady), "Vault layout did not become ready");
+    return !!window.app?.workspace?.layoutReady && !!app.plugins?.manifests?.dowse;
+  }), "Vault startup did not finish");
+  stage = "enable known production plugin";
+  await page.evaluate(async () => {
+    if (!app.plugins.isEnabled()) await app.plugins.setEnable(true);
+    await app.plugins.enablePluginAndSave("dowse");
+  });
+  await until(() => page.evaluate(() => !!app.plugins.plugins.dowse?.controller), "Plugin did not load");
+  stage = "open first-run search";
   await page.evaluate(async () => { await app.plugins.plugins.dowse.openSearch(); });
   assert.equal(await page.$eval(".dowse-off", el => !!el), true);
+  stage = "index disposable vault";
   // Only the embedder is replaced. IndexedDB, the search worker, event handlers and the UI are production code.
   await page.evaluate(async () => {
     const p = app.plugins.plugins.dowse;
@@ -164,7 +172,7 @@ try {
       direct: p?.engine ? await Promise.race([p.engine.search.search("budget", {}, false).catch(e => String(e)), new Promise(r => setTimeout(() => r("timed out"), 2000))]) : null };
   }).catch(e => ({ inspectionError: String(e) }));
   await Promise.race([page?.screenshot({ path: join(artifacts, "failure.png") }).catch(() => {}), pause(5000)]);
-  writeFileSync(join(artifacts, "failure.json"), JSON.stringify({ error: String(error), errors, stderr, root, state }, null, 2));
+  writeFileSync(join(artifacts, "failure.json"), JSON.stringify({ error: String(error), stage, errors, stderr, root, state }, null, 2));
   throw error;
 } finally {
   browser?.disconnect();
