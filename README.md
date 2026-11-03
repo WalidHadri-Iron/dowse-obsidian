@@ -64,7 +64,8 @@ turning Dowse off; it is otherwise retained when the plugin is removed.
 - **Settings → Dowse → Run the model on** selects automatic WebGPU or the processor. Automatic falls back to the
   processor if GPU startup or computation fails. Changing the device or media options is safe while indexing.
 - Reading can be paused, including automatically on battery. The model sleeps after ten idle minutes. Closing or
-  disabling the plugin cancels pending work and shuts down its readers before closing storage.
+  disabling the plugin cancels pending work and shuts down its readers before closing storage. Indexing reuses its
+  pending-work queue and checks the next file individually, avoiding a full-vault storage read before every file.
 
 Explore offers **By content** (automatic clusters of similar files) and **By folder**, and remembers the choice.
 Folder groups use each file's immediate parent path, so nested folders stay distinct; files directly in the vault
@@ -92,7 +93,7 @@ inference works without a network connection. For persistent errors, open Obsidi
 Dowse messages. If IndexedDB or the model cache is cleared by another tool, the data must be read/downloaded again.
 
 The Windows production plugin is tested in a separate real Obsidian profile. CI runs type checks, tests and builds
-on Windows, macOS and Linux, and includes native Mac/Linux smoke jobs. The smoke job replaces only embedding with
+on Windows, macOS 15 and Linux, and includes native Mac/Linux smoke jobs. The smoke job replaces only embedding with
 deterministic test vectors, so it tests real Obsidian events, local storage, the search worker and views without
 downloading a model. CI also runs real CPU model indexing/search and a 5,000-file reliability test on Mac/Linux. GPU and broader media accuracy checks run separately. A configured CI
 job is not a claim that it has run on a particular revision; inspect its results before distributing that build.
@@ -114,7 +115,7 @@ OBSIDIAN_EXECUTABLE=/path/to/Obsidian npm run test:native-model
 OBSIDIAN_EXECUTABLE=/path/to/Obsidian DOWSE_STRESS_FILES=10000 npm run test:vault
 ```
 
-`measurements/` holds what chose the model build.
+`measurements/` records model choices, retrieval results, native platform checks and larger-vault reliability tests.
 
 Build with Node 24, npm, and `xz` on PATH (Python with standard-library `lzma` on Windows). `npm ci` installs the locked dependencies. The model's worker, search
 worker, and ONNX WebAssembly runtime are included in `main.js`; no runtime JavaScript or WebAssembly is fetched.
