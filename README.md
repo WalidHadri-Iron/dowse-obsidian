@@ -102,6 +102,7 @@ job is not a claim that it has run on a particular revision; inspect its results
 ```sh
 npm install
 npm run build          # main.js
+python3 scripts/package.py  # install ZIP, build/dowse/ files, SHA256SUMS and commit metadata
 npm run check          # types
 npm test               # readers, search, file events, exclusions, cancellation, filters
 npm run measure        # the model builds against the reference vectors (Node)

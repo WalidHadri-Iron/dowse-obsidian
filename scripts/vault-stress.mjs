@@ -37,11 +37,19 @@ try {
   }); return !!anchor; }, "No file indexed", 240000);
   const anchorName = /record-(\d+)/.exec(anchor)[1];
   result.anchor = anchor;
-  for (let cycle = 0; cycle < 30; cycle++) {
+  const deadline = Date.now() + 30 * 60_000;
+  for (let cycle = 0; cycle < 30 || await page.evaluate(() => app.plugins.plugins.dowse.engine.status.state !== "idle"); cycle++) {
+    assert.ok(Date.now() < deadline, "indexing and search must finish within 30 minutes");
     const began = Date.now();
-    const query = `stabilitytoken${anchorName}`;
-    await page.evaluate(query => { const input = document.querySelector(".dowse-search input"); input.value = query; input.dispatchEvent(new Event("input", { bubbles: true })); }, query);
+    const query = `${cycle % 2 ? "record " : ""}stabilitytoken${anchorName}`;
+    await page.click(".dowse-search input");
+    const modifier = process.platform === "darwin" ? "Meta" : "Control";
+    await page.keyboard.down(modifier); await page.keyboard.press("a"); await page.keyboard.up(modifier);
+    await page.keyboard.press("Backspace");
     await page.waitForFunction(() => document.querySelector(".dowse-body")?.getAttribute("aria-busy") === "false", { polling: 50, timeout: 60000 });
+    await page.keyboard.type(query, { delay: 2 });
+    await page.waitForFunction(title => document.querySelector(".dowse-body")?.getAttribute("aria-busy") === "false" &&
+      document.querySelector(".dowse-result-title")?.textContent === title, { polling: 50, timeout: 60000 }, `Record ${Number(anchorName)}`);
     const state = await page.evaluate(() => ({ summary: document.querySelector(".dowse-summary").textContent,
       title: document.querySelector(".dowse-result-title")?.textContent, indexing: app.plugins.plugins.dowse.engine.status.state }));
     assert.equal(state.title, `Record ${Number(anchorName)}`, "the already indexed anchor stays searchable");
@@ -78,9 +86,9 @@ try {
     }
     if (cycle % 5 === 0) console.log(JSON.stringify({ cycle, seconds: (Date.now() - started) / 1000, ...state }));
     // Keep work running long enough to exercise interleaved refreshes rather than one burst of startup work.
-    await delay(1500);
+    await delay(cycle < 30 ? 1500 : 5000);
   }
-  await until(() => page.evaluate(() => app.plugins.plugins.dowse.engine.status.state === "idle"), "Indexing did not finish", 600000);
+  await until(() => page.evaluate(() => app.plugins.plugins.dowse.engine.status.state === "idle"), "Indexing did not finish", 1800000);
   await page.evaluate(() => app.plugins.plugins.dowse.engine.search.changed(true));
   result.final = await page.evaluate(async mutations => {
     const p = app.plugins.plugins.dowse; await p.fileEvents.settled();

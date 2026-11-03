@@ -59,7 +59,7 @@ export async function native(label, prepare = async () => {}) {
       if (trust && !window.__dowseTestTrusted) { window.__dowseTestTrusted = true; trust.click(); }
       return !!window.app?.plugins?.plugins?.dowse?.fileEvents;
     }), "The production plugin did not load");
-    await page.evaluate(() => new Promise(resolve => app.workspace.onLayoutReady(resolve)));
+    await until(() => page.evaluate(() => !!window.app?.workspace?.layoutReady), "Vault layout did not become ready");
     await writeFile(join(artifacts, "launch.json"), JSON.stringify({ platform: process.platform, executable, root, pid: child.pid }));
     return { page, browser, root, profile, vault, artifacts, errors, consoleErrors, close };
   } catch (error) { await close(); throw error; }

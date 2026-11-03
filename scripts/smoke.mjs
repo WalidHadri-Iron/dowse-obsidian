@@ -55,7 +55,7 @@ try {
     if (trust && !window.__dowseTestTrusted) { window.__dowseTestTrusted = true; trust.click(); }
     return !!window.app?.plugins?.plugins?.dowse?.fileEvents;
   }), "Plugin did not load");
-  await page.evaluate(() => new Promise(resolve => app.workspace.onLayoutReady(resolve)));
+  await until(() => page.evaluate(() => !!window.app?.workspace?.layoutReady), "Vault layout did not become ready");
   await page.evaluate(async () => { await app.plugins.plugins.dowse.openSearch(); });
   assert.equal(await page.$eval(".dowse-off", el => !!el), true);
   // Only the embedder is replaced. IndexedDB, the search worker, event handlers and the UI are production code.
