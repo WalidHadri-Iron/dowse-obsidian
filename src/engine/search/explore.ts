@@ -251,7 +251,8 @@ export function names(centres: Float32Array[], words: Float32Array[] | null, voc
   const used = new Set<string>();
   return scores.map((own) => {
     const order = descending(Float32Array.from(own, (s, w) => s - mean[w] + 0.5 * s));
-    const picked = order.map((i) => vocabulary[i]).filter((w) => !used.has(w)).slice(0, 2);
+    // (a word the vocabulary holds twice, "night", is still one word: never "Night · night")
+    const picked = [...new Set(order.map((i) => vocabulary[i]))].filter((w) => !used.has(w)).slice(0, 2);
     if (picked[0]) used.add(picked[0]);
     return picked.map((w, j) => (j === 0 ? w[0].toUpperCase() + w.slice(1) : w)).join(" · ");
   });

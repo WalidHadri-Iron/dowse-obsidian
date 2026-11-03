@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { arrange, buildFolderMap, buildMap, fileVectors, grouped, type MapFile } from "../src/engine/search/explore.ts";
+import { arrange, buildFolderMap, buildMap, fileVectors, grouped, names, type MapFile } from "../src/engine/search/explore.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("fixtures/explore.json", import.meta.url), "utf8"));
 const bytes = (b64: string) => { const b = Buffer.from(b64, "base64"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
@@ -105,4 +105,10 @@ test("large folder maps retain full counts with bounded representative previews"
   assert.equal(map.aisles.reduce((n, a) => n + a.count, 0), 10000);
   assert.equal(Object.values(map.membership).flat().length, 10000);
   assert.ok(map.pieces.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});
+
+test("a word the vocabulary holds twice names a sign once, never twice", () => {
+  const night = Float32Array.from([1, 0, 0]), day = Float32Array.from([0, 1, 0]), sea = Float32Array.from([0, 0, 1]);
+  const [name] = names([Float32Array.from([0.9, 0.3, 0.1])], [night, night, day, sea], ["night", "night", "day", "sea"]);
+  assert.equal(name, "Night · day");
 });
