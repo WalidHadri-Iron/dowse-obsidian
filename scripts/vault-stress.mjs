@@ -44,7 +44,7 @@ try {
     await page.waitForFunction(() => document.querySelector(".dowse-body")?.getAttribute("aria-busy") === "false", { polling: 50, timeout: 60000 });
     const state = await page.evaluate(() => ({ summary: document.querySelector(".dowse-summary").textContent,
       title: document.querySelector(".dowse-result-title")?.textContent, indexing: app.plugins.plugins.dowse.engine.status.state }));
-    assert.ok(state.title, "the already indexed anchor stays searchable");
+    assert.equal(state.title, `Record ${Number(anchorName)}`, "the already indexed anchor stays searchable");
     result.queries.push({ cycle, ms: Date.now() - began, ...state });
     if (cycle === 2) {
       const changes = await page.evaluate(async paths => {
@@ -87,17 +87,20 @@ try {
     const rows = await p.engine.store.files(), segments = await p.engine.store.segments();
     const failures = [];
     for (const path of mutations.deleted) if (rows.some(r => r.path === path) || segments.some(s => s.path === path)) failures.push(`ghost ${path}`);
-    for (const [path, marker] of mutations.edited) if (!segments.some(s => s.path === path && s.body.includes(marker) && s.body.includes("revision 2"))) failures.push(`stale edit ${path}`);
+    for (const [path, marker] of mutations.edited) if (!path.includes("Group7/") && !segments.some(s => s.path === path && s.body.includes(marker) && s.body.includes("revision 2"))) failures.push(`stale edit ${path}`);
     for (const [old, path, marker] of mutations.renamed) {
       if (rows.some(r => r.path === old) || segments.some(s => s.path === old)) failures.push(`old name ${old}`);
       if (!path.includes("Group7/") && !segments.some(s => s.path === path && s.body.includes(marker))) failures.push(`missing rename ${path}`);
     }
+    const expected = app.vault.getFiles().filter(f => f.extension === "md" && !f.path.startsWith("Sources/Group7/"));
+    const complete = expected.filter(f => rows.some(r => r.path === f.path && r.state === "done")).length;
     const hidden = await p.engine.search.search("", { within: ["Sources/Group7"] }, false);
     const d = window.__stress; clearInterval(d.timer); d.observer.disconnect();
-    return { rows: rows.length, vectors: segments.filter(s => s.vector).length, failed: rows.filter(r => r.state === "failed"),
+    return { expected: expected.length, complete, rows: rows.length, vectors: segments.filter(s => s.vector).length, failed: rows.filter(r => r.state === "failed"),
       failures, excludedHits: hidden.hits.length, status: p.engine.status, maxTask: Math.max(0, ...d.tasks),
       maxGap: Math.max(0, ...d.gaps), states: [...new Set(d.states)] };
   }, result.mutations);
+  assert.equal(result.final.complete, result.final.expected, "all active files indexed, including saved progress after reload");
   assert.deepEqual(result.final.failures, []);
   assert.deepEqual(result.final.failed, []);
   assert.equal(result.final.excludedHits, 0);

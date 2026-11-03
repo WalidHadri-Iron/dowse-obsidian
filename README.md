@@ -115,7 +115,7 @@ OBSIDIAN_EXECUTABLE=/path/to/Obsidian DOWSE_STRESS_FILES=10000 npm run test:vaul
 
 `measurements/` holds what chose the model build.
 
-Build with Node 24, npm, and `xz` on PATH. `npm ci` installs the locked dependencies. The model's worker, search
+Build with Node 24, npm, and `xz` on PATH (Python with standard-library `lzma` on Windows). `npm ci` installs the locked dependencies. The model's worker, search
 worker, and ONNX WebAssembly runtime are included in `main.js`; no runtime JavaScript or WebAssembly is fetched.
 CI build artifacts contain the three files needed for manual installation. A native smoke test needs an installed
 Obsidian executable; on a headless Linux machine run it under `xvfb-run`. It creates and closes only its own profile

@@ -29,7 +29,10 @@ const runtime = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.wasm"));
 const packed = join(".cache", `ort-wasm-${createHash("sha256").update(runtime).digest("hex").slice(0, 16)}.xz`);   // (9 s)
 if (!existsSync(packed)) {
   mkdirSync(".cache", { recursive: true });
-  writeFileSync(packed, execFileSync("xz", ["-9e", "--stdout"], { input: runtime, maxBuffer: 1 << 30 }));
+  // Python's standard-library lzma uses the same XZ format/preset on Windows, where xz is not normally on PATH.
+  const command = process.platform === "win32" ? "python" : "xz";
+  const args = process.platform === "win32" ? ["-c", "import lzma,sys; sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(), preset=9 | lzma.PRESET_EXTREME))"] : ["-9e", "--stdout"];
+  writeFileSync(packed, execFileSync(command, args, { input: runtime, maxBuffer: 1 << 30 }));
 }
 const wasm = readFileSync(packed).toString("base64");
 const glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf8");

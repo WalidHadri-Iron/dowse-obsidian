@@ -16,9 +16,6 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: xz for bundled runtime
-        if: runner.os == 'Windows'
-        run: choco install xz --no-progress -y
       - run: npm run check
       - run: npm test
       - run: npm run build
