@@ -84,6 +84,7 @@ export class Indexer {
   private running = false;
   private task: Promise<void> | null = null;
   private version = 0;
+  private waitingRows: FileRow[] | null = null;
   private abort = new AbortController();
   private stopped = false;
   private waited = 0;   // ms of the file being read spent waiting (for you, for the model): not reading
@@ -132,9 +133,9 @@ export class Indexer {
       else if (row.state === "done" && this.nowReadable(row)) await this.store.putFile({ ...row, state: "pending", next: null });
     }
     for (const path of rows.keys()) if (!present.has(path)) await this.store.remove(path);
+    this.poke();
     const waiting = (await this.waiting()).length;
     this.report({ total: this.status.done + waiting });
-    this.poke();
     return waiting;
   }
 
@@ -145,9 +146,29 @@ export class Indexer {
 
   /** What waits, the most recently changed first (the note you just wrote before last year's). */
   private async waiting(): Promise<FileRow[]> {
-    const rows = await this.store.files();
-    return rows.filter((row) => row.state === "pending" && this.options.active(row.path))
-      .sort((a, b) => b.mtime - a.mtime);
+    if (!this.waitingRows) {
+      const version = this.version;
+      const rows = await this.store.files();
+      // A mutation can finish while IndexedDB returns an older snapshot. Never publish that snapshot as current.
+      if (version !== this.version) return this.waiting();
+      this.waitingRows = rows.filter((row) => row.state === "pending" && this.options.active(row.path))
+        .sort((a, b) => b.mtime - a.mtime);
+    }
+    // Saves update the queued row in place. Reuse the remaining work instead of cloning the whole vault per file.
+    const queued = this.waitingRows;
+    while (queued.length) {
+      const next = queued[0];
+      if (next.state === "pending" && this.options.active(next.path)) {
+        const version = this.version;
+        const current = await this.store.file(next.path);
+        if (version !== this.version || queued !== this.waitingRows) return this.waiting();
+        // A concurrent sync may have captured this file just before its previous read finished. Check one row,
+        // rather than reloading all rows, so it cannot be read twice or use an obsolete revision.
+        if (current?.state === "pending" && this.options.active(next.path)) { Object.assign(next, current); return queued; }
+      }
+      queued.shift();
+    }
+    return queued;
   }
 
   /** A file was created or changed (Obsidian's event): read it again. */
@@ -163,6 +184,7 @@ export class Indexer {
 
   async removed(path: string): Promise<void> {
     await this.store.removeTree(path);
+    this.poke();
     this.options.onSaved?.(path);
   }
 
@@ -172,11 +194,13 @@ export class Indexer {
       if (row.path === from) await this.store.rename(from, to);
       else if (row.path.startsWith(from + "/")) await this.store.rename(row.path, to + row.path.slice(from.length));
     }
+    this.poke();
     this.options.onSaved?.(to);
   }
 
   private poke(): void {
     this.version++;
+    this.waitingRows = null;
     this.wake?.();
   }
 
@@ -190,6 +214,7 @@ export class Indexer {
   private async loop(): Promise<void> {
     this.running = true;
     this.stopped = false;
+    this.waitingRows = null;
     this.abort = new AbortController();
     try {
       while (!this.stopped) {
@@ -316,10 +341,11 @@ export class Indexer {
     } catch (error) {
       if (this.stopped || error instanceof Cancelled || error instanceof ModelMissing) throw error;
       const latest = await this.store.file(row.path);
-      if (latest && latest.mtime === row.mtime) {
-        await this.store.putFile({ ...latest, state: "failed", detail: error instanceof Error ? error.message : String(error) });
-        this.report({ failed: this.status.failed + 1 });
-      }
+      this.waitingRows = null;
+      if (!latest || !this.options.active(row.path)) return;
+      const saved = await this.store.saveStep({ ...latest, state: "failed",
+        detail: error instanceof Error ? error.message : String(error) }, [], false, row);
+      if (saved) this.report({ failed: this.status.failed + 1 });
     }
   }
 

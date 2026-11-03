@@ -251,3 +251,80 @@ test("adding PDF scans renders and saves one page at a time, then resumes withou
   assert.equal((await store.file("Scans.pdf"))!.info.waitingFor, undefined);
   store.close();
 });
+
+test("batch indexing does not rescan the whole vault per file, including after an unreadable note", async () => {
+  const { store, source, indexer } = await setup(Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`${i}.md`, `Note ${i}.`])));
+  const files = store.files.bind(store); let scans = 0;
+  store.files = async () => { scans++; return files(); };
+  const text = source.text.bind(source);
+  source.text = async path => { if (path === "10.md") throw new Error("unreadable"); return text(path); };
+  await indexer.sync(); await readAll(indexer);
+  assert.ok(scans < 10, `indexing 200 files made ${scans} full-vault reads`);
+  const rows = await files();
+  assert.equal(rows.filter(row => row.state === "done").length, 199);
+  assert.equal(rows.filter(row => row.state === "failed").length, 1);
+  store.close();
+});
+
+test("the pending queue follows edits, additions, deletes and renames during an in-flight read", async () => {
+  const { store, source, indexer, fake } = await setup({ "a.md": "Alpha.", "b.md": "Old beta.", "c.md": "Gone.", "d.md": "Delta." });
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>(resolve => { entered = resolve; });
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const text = source.text.bind(source);
+  source.text = async path => { if (path === "a.md") { entered(); await hold; } return text(path); };
+  await indexer.sync(); const run = indexer.run(); await reading;
+  source.notes["b.md"] = "Latest beta."; await indexer.changed(source.touch("b.md"));
+  source.notes["new.md"] = "New arrival."; await indexer.changed(source.touch("new.md"));
+  delete source.notes["c.md"]; await indexer.removed("c.md");
+  source.notes["Moved/d.md"] = source.notes["d.md"]; delete source.notes["d.md"];
+  await indexer.renamed("d.md", "Moved/d.md");
+  release(); await indexer.settled(); indexer.stop(); await run;
+  assert.deepEqual((await store.files()).map(row => [row.path, row.state]),
+    [["Moved/d.md", "done"], ["a.md", "done"], ["b.md", "done"], ["new.md", "done"]]);
+  assert.equal((await store.segmentsOf("b.md"))[0].body, "Latest beta.");
+  assert.equal((await store.segmentsOf("Moved/d.md"))[0].body, "Delta.");
+  assert.equal(fake.asked.length, 4);
+  store.close();
+});
+
+test("a read failure from an obsolete revision cannot fail the edited file", async () => {
+  const { store, source, indexer } = await setup({ "a.md": "Old text." });
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>(resolve => { entered = resolve; });
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  let first = true;
+  source.text = async path => {
+    if (first) { first = false; entered(); await hold; throw new Error("obsolete read failed"); }
+    return source.notes[path];
+  };
+  await indexer.sync(); const run = indexer.run(); await reading;
+  source.notes["a.md"] = "Corrected text."; await indexer.changed(source.touch("a.md"));
+  release(); await indexer.settled(); indexer.stop(); await run;
+  assert.equal((await store.file("a.md"))!.state, "done");
+  assert.equal((await store.segmentsOf("a.md"))[0].body, "Corrected text.");
+  assert.equal(indexer.status.failed, 0);
+  store.close();
+});
+
+test("a stale queue snapshot cannot reread a file completed by another writer", async () => {
+  const { store, indexer, fake } = await setup({ "a.md": "Alpha.", "b.md": "Beta." });
+  await indexer.sync();
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>(resolve => { entered = resolve; });
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const files = store.files.bind(store); let first = true;
+  store.files = async () => {
+    const rows = await files();
+    if (first) { first = false; entered(); await hold; }
+    return rows;
+  };
+  const run = indexer.run(); await reading;
+  const row = (await store.file("a.md"))!;
+  await store.saveStep({ ...row, state: "done" }, [{ path: row.path, kind: "passage", modality: "none",
+    loc: 0, locEnd: 0, body: "Saved elsewhere.", vector: null }], true);
+  release(); await indexer.settled(); indexer.stop(); await run;
+  assert.equal(fake.asked.length, 1);
+  assert.equal((await store.segmentsOf("a.md"))[0].body, "Saved elsewhere.");
+  store.close();
+});
