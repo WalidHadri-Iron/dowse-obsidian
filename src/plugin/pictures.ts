@@ -37,7 +37,11 @@ export class Pictures {
           // Drawing thumbnails must contain the whole diagram. Ordinary photos may be cropped by the wall/floor.
           let image: ImageBitmap | null = null;
           try {
-            image = await createImageBitmap(await (await fetch(url, { signal })).blob());
+            const element = new Image();   // (the drawing Excalidraw rendered here, loaded as a picture: nothing fetched)
+            element.src = url;
+            await element.decode();
+            if (signal.aborted) return null;
+            image = await createImageBitmap(element);
             if (signal.aborted) return null;
             const width = Math.round(Math.max(96, Math.min(pixels, 4096))), height = Math.round(width * PAGE.height / PAGE.width);
             const canvas = new OffscreenCanvas(width, height), g = canvas.getContext("2d")!;
@@ -108,7 +112,7 @@ export class Pictures {
   private async still(path: string, time: number, pixels: number): Promise<string | null> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return null;
-    const video = document.createElement("video");
+    const video = createEl("video");
     video.muted = true;
     video.preload = "auto";
     const signal = this.abort.signal;

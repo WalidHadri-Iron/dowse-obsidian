@@ -14,7 +14,7 @@ const HIGH = "GpuPreference=2;";
 
 function reg(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => execFile("reg", args, { windowsHide: true, timeout: 10000 },
-    (error, stdout) => (error ? reject(error) : resolve(stdout))));
+    (error, stdout) => (error ? reject(new Error(error.message)) : resolve(stdout))));
 }
 
 /** A card of its own (NVIDIA, AMD Radeon RX or Pro, Intel Arc A or B), not one built into the processor. */

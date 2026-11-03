@@ -43,7 +43,7 @@ export class Model {
   private answer(message: Answer): void {
     if (message.op === "progress") { this.requests.touch(); return this.onProgress(message.file, message.loaded, message.total); }
     if (message.op === "device") { this.device = message.device; this.gpu = message.gpu; this.onDevice(message.device, message.gpu); return; }
-    if (message.op === "log") return console.log("Dowse's model:", message.message);
+    if (message.op === "log") return console.debug("Dowse's model:", message.message);
     this.requests.answer(message.id, message.op === "done" ? message.result : undefined,
       message.op === "failed" ? message.message : undefined);
   }

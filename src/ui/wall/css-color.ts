@@ -5,10 +5,8 @@ let canvas: CanvasRenderingContext2D | null = null;
 
 /** `name`, a custom property seen from `host`, as rgb(), laid over `under` (a translucent token over the floor). */
 export function cssColor(host: HTMLElement, name: string, under = "#ffffff"): string {
-  const probe = document.createElement("span");
-  probe.style.color = `var(${name})`;
-  probe.style.display = "none";
-  host.append(probe);
+  const probe = host.createSpan();   // (read and taken away at once: never drawn)
+  probe.setCssProps({ color: `var(${name})` });
   const resolved = getComputedStyle(probe).color;
   probe.remove();
   canvas ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true }) as unknown as CanvasRenderingContext2D;

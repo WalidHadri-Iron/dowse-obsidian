@@ -35,7 +35,7 @@ export async function openShown(app: App, shown: Shown, newTab = false): Promise
       for (let i = 0; i < 40 && !media; i++) {
         if (!current()) return;
         media = leaf.view.containerEl.querySelector<HTMLMediaElement>("audio, video");
-        if (!media) await new Promise(resolve => setTimeout(resolve, 50));
+        if (!media) await new Promise(resolve => window.setTimeout(resolve, 50));
       }
       if (!media) throw new Error("No media player in this view");
       if (!current()) return;

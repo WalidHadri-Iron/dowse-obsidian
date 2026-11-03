@@ -35,20 +35,20 @@ const VERSION = 1;
 function done<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error("the index's request failed"));
   });
 }
 
 function finished(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error("the index's transaction failed"));
     tx.onabort = () => reject(tx.error ?? new Error("the index's transaction was aborted"));
   });
 }
 
 export function toHalf(vector: ArrayLike<number>): ArrayBuffer {
-  return Float16Array.from(vector as ArrayLike<number>).buffer as ArrayBuffer;
+  return Float16Array.from(vector).buffer;
 }
 
 const SIZE_BATCH = 500;

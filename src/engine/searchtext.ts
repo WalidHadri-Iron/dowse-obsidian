@@ -91,7 +91,7 @@ export function chunks(text: string, size = 1800, overlap = 200, limit = 5000): 
 }
 
 export function clean(text: string): string {
-  return text.replace(/[ \t ]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+  return text.replace(/[ \t\u00a0]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
 }
 
 /** The same passages, each with where it starts in `clean(text)` (so a reader can tell the line it's on). */

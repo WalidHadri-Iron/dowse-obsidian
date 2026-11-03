@@ -48,7 +48,7 @@ export function roundedPlane(width: number, height: number, radius: number): THR
 
 /** A face for files that aren't pictures: a document's opening words, a recording's sound. */
 export function cardTexture(piece: Face, dark: boolean, pixels = 680): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = pixels; canvas.height = Math.round(pixels * 500 / 680);
   const g = canvas.getContext("2d")!;
   g.scale(pixels / 680, pixels / 680);   // same layout, crisp glyphs at the case's actual screen resolution

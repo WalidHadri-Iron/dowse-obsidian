@@ -8,7 +8,7 @@ export function dragLink(event: DragEvent, link: string | null, name: string): v
   }
   event.dataTransfer.setData("text/plain", link);
   event.dataTransfer.effectAllowed = "copyLink";
-  const ghost = document.createElement("div");
+  const ghost = createDiv();
   ghost.className = "dowse-drag-ghost";
   ghost.textContent = name;
   document.body.appendChild(ghost);

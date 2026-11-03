@@ -94,7 +94,7 @@ export class VaultSource implements Source {
     cancelled(signal);
     const file = this.file(path);
     if (file.stat.size > SOUND_FILE_BYTES) return null;
-    const metadata = document.createElement("audio");
+    const metadata = createEl("audio");
     metadata.preload = "metadata";
     try {
       const ready = mediaEvent(metadata, "loadedmetadata", signal);
@@ -128,7 +128,7 @@ export class VaultSource implements Source {
 
   async video(path: string, signal?: AbortSignal) {
     cancelled(signal);
-    const element = document.createElement("video");
+    const element = createEl("video");
     element.muted = true;
     element.preload = "auto";
     element.crossOrigin = "anonymous";

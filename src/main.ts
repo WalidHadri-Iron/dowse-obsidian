@@ -65,7 +65,7 @@ export default class DowsePlugin extends Plugin {
     this.addCommand({ id: "search", name: "Search the vault", callback: () => {
       if (!this.controller.on()) void this.openSearch(); else new QuickSearch(this.app, this.controller).open();
     } });
-    this.addCommand({ id: "open", name: "Open Dowse", callback: () => void this.openSearch() });
+    this.addCommand({ id: "open", name: "Open the search tab", callback: () => void this.openSearch() });
     this.addCommand({ id: "similar", name: "Show what's like this note", callback: () => void this.openSimilar() });
     this.addCommand({ id: "pause", name: "Pause or resume reading", checkCallback: (checking) => {
       if (!this.engine) return false;
@@ -76,7 +76,7 @@ export default class DowsePlugin extends Plugin {
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.on) await this.start();
       this.showStatus();
-      if (DEV) (await import("./dev/hooks.ts")).run(this);
+      if (DEV) void (await import("./dev/hooks.ts")).run(this);
     });
   }
 

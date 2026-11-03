@@ -1,7 +1,7 @@
 // The views: the Dowse tab (search, the fisheye wall), the sidebar of what's like the open file, and Quick search
 // (Obsidian's own suggestion modal, opened by a command you give a hotkey).
 
-import { ItemView, SuggestModal, type App, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, SuggestModal, type App, type ViewStateResult, type WorkspaceLeaf, Platform } from "obsidian";
 import { mount, unmount } from "svelte";
 import SearchPanel from "../ui/SearchPanel.svelte";
 import SimilarPanel from "../ui/SimilarPanel.svelte";
@@ -84,7 +84,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   private items: Shown[] = [];
   private stops: (() => void)[] = [];
   private summary: HTMLElement | null = null;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer: number | undefined;
   private waiting: (() => void) | null = null;
   private asked = 0;
   private active = false;
@@ -96,7 +96,7 @@ export class QuickSearch extends SuggestModal<Shown> {
     this.setPlaceholder("Describe what you remember");
     this.setInstructions([
       { command: "↑↓", purpose: "to move" }, { command: "↵", purpose: "to open" },
-      { command: navigator.platform.includes("Mac") ? "⌘ ↵" : "ctrl ↵", purpose: "to open in a new tab" }, { command: "esc", purpose: "to close" },
+      { command: Platform.isMacOS ? "⌘ ↵" : "ctrl ↵", purpose: "to open in a new tab" }, { command: "esc", purpose: "to close" },
     ]);
     this.scope.register(["Mod"], "Enter", (event) => {
       const chosen = (this as unknown as { chooser?: { values?: Shown[]; selectedItem?: number } }).chooser;
@@ -108,7 +108,7 @@ export class QuickSearch extends SuggestModal<Shown> {
   }
 
   onOpen(): void {
-    super.onOpen();
+    void super.onOpen();
     this.active = true;
     this.summary = this.resultContainerEl.parentElement!.createDiv({ cls: "dowse-quick-status", attr: { role: "status", "aria-live": "polite" } });
     this.resultContainerEl.before(this.summary);
@@ -128,7 +128,7 @@ export class QuickSearch extends SuggestModal<Shown> {
 
   onClose(): void {
     this.active = false; this.asked++;
-    clearTimeout(this.timer); this.waiting?.(); this.waiting = null;
+    window.clearTimeout(this.timer); this.waiting?.(); this.waiting = null;
     for (const stop of this.stops.splice(0)) stop();
     this.summary?.remove(); this.summary = null;
     super.onClose();
@@ -136,7 +136,7 @@ export class QuickSearch extends SuggestModal<Shown> {
 
   async getSuggestions(query: string): Promise<Shown[]> {
     const mine = ++this.asked;
-    clearTimeout(this.timer); this.waiting?.();
+    window.clearTimeout(this.timer); this.waiting?.();
     if (!this.controller.on()) { this.summary?.setText("Dowse is off for this vault. Open the Dowse tab to turn it on."); return []; }
     if (!query.trim()) {
       const recent = await this.controller.recent();
@@ -147,7 +147,7 @@ export class QuickSearch extends SuggestModal<Shown> {
       return this.items = this.recent;
     }
     this.summary?.setText(this.controller.ready() ? "Searching…" : "Searching words while the model starts…");
-    await new Promise<void>(resolve => { this.waiting = resolve; this.timer = setTimeout(resolve, 150); });
+    await new Promise<void>(resolve => { this.waiting = resolve; this.timer = window.setTimeout(resolve, 150); });
     if (mine !== this.asked || !this.active) return this.items;
     this.waiting = null;
     let answer;

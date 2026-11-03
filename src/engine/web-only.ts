@@ -9,7 +9,9 @@ function webOnly(): void {
   if (typeof scope.process !== "undefined") {
     try {
       delete scope.process;
-    } catch {}
+    } catch {
+      // (not deletable here: hidden below instead)
+    }
     if (typeof scope.process !== "undefined") Object.defineProperty(scope, "process", { value: undefined, configurable: true });
   }
 }

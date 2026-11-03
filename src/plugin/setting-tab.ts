@@ -122,7 +122,7 @@ export class DowseSettingTab extends PluginSettingTab {
     this.retryEl.onclick = () => this.plugin.engine?.retry();
     this.refreshStatus();
 
-    this.graphics(el.createDiv());
+    void this.graphics(el.createDiv());
 
     new Setting(el).setName("Reading").setHeading();
     new Setting(el).setName("Pause reading")
@@ -235,7 +235,7 @@ export class DowseSettingTab extends PluginSettingTab {
           new Notice(`Quit Obsidian and open it again: it will run on ${high ? `the ${faster}` : "the graphics Windows chooses"}.`, 10000);
         } catch (error) {
           toggle.setValue(!high);
-          new Notice(`Windows' graphics preference couldn't be changed: ${error instanceof Error ? error.message : error}`);
+          new Notice(`Windows' graphics preference couldn't be changed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }));
   }

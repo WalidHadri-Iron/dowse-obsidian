@@ -15,7 +15,7 @@ export class FileEvents {
     this.cancel(path, false);
     this.timers.set(path, setTimeout(() => {
       this.timers.delete(path);
-      this.order(() => this.apply(path));
+      void this.order(() => this.apply(path));
     }, this.ms));
   }
 
