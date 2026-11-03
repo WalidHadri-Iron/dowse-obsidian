@@ -65,3 +65,7 @@ replaces only embedding with deterministic vectors, avoiding a model download. R
 The repository now includes checks/builds on Windows, macOS and Linux and native Mac/Linux smoke jobs. These jobs
 are configured; they have not been executed remotely as part of this local change. Mac/Linux native inference and
 an old installer still require their own platform checks before distribution to those targets.
+
+Later native CI and larger-vault validation completed on 2026-11-03. See
+[the release validation record](release-validation-2026-11-03.md) for the subsequent platform results;
+this historical report's pending-platform note reflects the earlier check only.
