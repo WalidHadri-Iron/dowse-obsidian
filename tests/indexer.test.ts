@@ -163,8 +163,12 @@ test("a recording is read in Dowse's windows once sound is on", async () => {
   const { store, indexer } = await setup({ "Memos/standup.m4a": "70" }, undefined, { image: false, audio: true });
   await indexer.sync();
   await readAll(indexer);
-  assert.deepEqual((await store.segmentsOf("Memos/standup.m4a")).map((s) => [s.kind, s.modality, s.loc, s.locEnd]),
-                   [["audio", "audio", 0, 30], ["audio", "audio", 25, 55], ["audio", "audio", 50, 70]]);
+  const segments = await store.segmentsOf("Memos/standup.m4a");
+  assert.equal(segments.length, 17);
+  assert.deepEqual(segments[0] && [segments[0].kind, segments[0].modality, segments[0].loc, segments[0].locEnd],
+    ["audio", "audio", 0, 8]);
+  assert.deepEqual(segments.at(-1) && [segments.at(-1)!.loc, segments.at(-1)!.locEnd], [64, 70]);
+  assert.ok(segments.every(s => s.locEnd! - s.loc! <= 8), "timing passages are no longer thirty seconds wide");
   assert.equal((await store.file("Memos/standup.m4a"))!.info.duration, 70);
 });
 
@@ -224,4 +228,26 @@ test("the time left, from the speed of each kind so far", async () => {
   assert.equal(indexer.estimate([row("e.md", "note", 2000)]), 2, "a note: its size at the notes' speed");
   assert.equal(indexer.estimate([row("f.png", "image", 1)]), 2, "an image: an image's time, whatever its size");
   assert.equal(indexer.estimate([row("g.pdf", "pdf", 10)]), 2, "a kind not read yet: the files' mean");
+});
+
+test("adding PDF scans renders and saves one page at a time, then resumes without duplicating saved pages", async () => {
+  const { store, source, indexer, parts } = await setup({ "Scans.pdf": Array.from({ length: 75 }, () => "scan").join("\f") });
+  await indexer.sync(); await readAll(indexer);
+  let rendered = 0;
+  source.page = async () => {
+    rendered++;
+    const saved = (await store.segmentsOf("Scans.pdf")).filter(s => s.modality === "image").length;
+    assert.equal(rendered - saved, 1, "the previous page must be saved before drawing another");
+    return picture;
+  };
+  (indexer as any).options.onSaved = () => { if (rendered === 3) indexer.stop(); };
+  parts.image = true; await indexer.sync(); await indexer.run();
+  assert.equal((await store.file("Scans.pdf"))!.info.pictureNext, 3);
+  (indexer as any).options.onSaved = undefined;
+  await indexer.sync(); await readAll(indexer);
+  const images = (await store.segmentsOf("Scans.pdf")).filter(s => s.modality === "image");
+  assert.equal(images.length, 75);
+  assert.equal(new Set(images.map(s => s.loc)).size, 75);
+  assert.equal((await store.file("Scans.pdf"))!.info.waitingFor, undefined);
+  store.close();
 });

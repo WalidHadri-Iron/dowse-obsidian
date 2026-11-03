@@ -6,7 +6,9 @@ import { MarkdownView, Menu, Notice, Plugin, type TAbstractFile, TFile, TFolder,
 import { Engine } from "./plugin/engine.ts";
 import { linkTo, openShown } from "./plugin/open.ts";
 import { Pictures } from "./plugin/pictures.ts";
-import { DEFAULTS, isOn, turnOff, turnOn, type Settings } from "./plugin/settings.ts";
+import { DEFAULTS, isOn, renamed, turnOff, turnOn, type Settings } from "./plugin/settings.ts";
+import { FileEvents } from "./plugin/file-events.ts";
+import { runtimeProblem } from "./plugin/compat.ts";
 import { DowseSettingTab } from "./plugin/setting-tab.ts";
 import { statusText } from "./plugin/status.ts";
 import { Power } from "./plugin/power.ts";
@@ -24,7 +26,13 @@ export default class DowsePlugin extends Plugin {
   engine: Engine | null = null;
   private statusBar!: HTMLElement;
   private lastKey = 0;
-  private quiet = new Map<string, number>();
+  private fileEvents!: FileEvents;
+  private opening: Promise<void> | null = null;
+  private stopping: Promise<void> = Promise.resolve();
+  private disposed = false;
+  private forgetOnOpen = false;
+  private selection = 0;
+  private saving: Promise<void> = Promise.resolve();
   private listeners = new Set<() => void>();
   private pictures!: Pictures;
   private power!: Power;
@@ -54,7 +62,9 @@ export default class DowsePlugin extends Plugin {
     this.registerView(SIMILAR_VIEW, (leaf) => new SimilarView(leaf, this.controller));
     this.registerHoverLinkSource("dowse", { display: "Dowse", defaultMod: true });
     this.addRibbonIcon(ICON, "Dowse: search the vault by what's in it", () => void this.openSearch());
-    this.addCommand({ id: "search", name: "Search the vault", callback: () => new QuickSearch(this.app, this.controller).open() });
+    this.addCommand({ id: "search", name: "Search the vault", callback: () => {
+      if (!this.controller.on()) void this.openSearch(); else new QuickSearch(this.app, this.controller).open();
+    } });
     this.addCommand({ id: "open", name: "Open Dowse", callback: () => void this.openSearch() });
     this.addCommand({ id: "similar", name: "Show what's like this note", callback: () => void this.openSimilar() });
     this.addCommand({ id: "pause", name: "Pause or resume reading", checkCallback: (checking) => {
@@ -71,29 +81,43 @@ export default class DowsePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.disposed = true;
     this.power.close();
     this.pictures.clear();
-    this.engine?.close();
-    for (const timer of this.quiet.values()) window.clearTimeout(timer);
+    void this.fileEvents.close().then(() => this.engine?.close()).catch(console.error);
+    this.engine?.stop();
   }
 
   async save(): Promise<void> {
-    await this.saveData(this.settings);
+    const snapshot = structuredClone(this.settings);
+    this.saving = this.saving.catch(console.error).then(() => this.saveData(snapshot));
+    await this.saving;
   }
 
   /** Dowse on for this vault: the index opened, the vault read (the model downloaded, the first time). */
   async start(): Promise<void> {
-    if (this.engine) return;
-    this.engine = await Engine.open(this.app, () => this.settings, {
+    await this.stopping;
+    const problem = runtimeProblem();
+    if (problem) { new Notice(problem, 15000); return; }
+    if (this.engine || this.disposed || !this.settings.on) return;
+    if (this.opening) return this.opening;
+    this.opening = this.openEngine().finally(() => { this.opening = null; });
+    return this.opening;
+  }
+
+  private async openEngine(): Promise<void> {
+    const engine = await Engine.open(this.app, () => this.settings, {
       busy: () => Date.now() - this.lastKey < TYPING_MS,
       held: () => this.held(),
     });
-    this.engine.onChange(() => { this.showStatus(); this.notify(); this.hintGraphics(); });
-    this.engine.search.follow({
+    if (this.disposed || !this.settings.on) { await engine.close(this.forgetOnOpen); this.forgetOnOpen = false; return; }
+    this.engine = engine;
+    engine.onChange(() => { this.showStatus(); this.notify(); this.hintGraphics(); });
+    engine.search.follow({
       wanted: () => this.followers.size > 0,
       made: () => { for (const follower of this.followers) follower(); },
     });
-    this.engine.start();
+    engine.start();
     this.notify();
   }
 
@@ -179,15 +203,21 @@ export default class DowsePlugin extends Plugin {
     const empty = { query: "", hits: [], strong: 0, terms: [], meaning: false, ms: 0 };
     return {
       on: () => this.settings.on && this.engine !== null,
+      active: path => this.settings.on && !!kindOf(path) && isOn(this.settings, path) && !!this.app.vault.getFileByPath(path),
+      selection: () => this.selection,
+      problem: () => runtimeProblem(),
+      folders: () => [...new Set(this.app.vault.getAllLoadedFiles().filter(f => f instanceof TFolder).map(f => f.path))].sort(),
       turnOn: async (parts) => { if (parts) await this.setParts(parts); await this.turnOn(); },
       parts: () => ({ images: this.settings.images, sound: this.settings.sound }),
       setParts: (change) => this.setParts(change),
-      search: async (query, kinds) => this.engine ? this.engine.search.search(query, { kinds }) : { ...empty, query },
+      search: async (query, kinds, filters) => this.engine ? this.engine.search.search(query, { ...filters, kinds }) : { ...empty, query },
       similar: async (path) => this.engine ? this.engine.search.similar(path) : empty,
       recent: async () => this.engine ? this.engine.search.recent() : [],
-      explore: async () => this.engine ? this.engine.search.explore() : { aisles: [], pieces: [], total: 0, membership: {} },
+      explore: async (grouping) => this.engine ? this.engine.search.explore(grouping) : { aisles: [], pieces: [], total: 0, membership: {} },
       picture: (piece, pixels, terms) => this.pictures.picture(piece, pixels, terms),
-      open: (shown, newTab) => void openShown(this.app, shown, newTab),
+      open: (shown, newTab) => {
+        if (this.settings.on && isOn(this.settings, shown.path)) void openShown(this.app, shown, newTab);
+      },
       link: (path) => linkTo(this.app, path, this.app.workspace.getActiveFile()?.path ?? ""),
       hover: (event, path, target) => this.app.workspace.trigger("hover-link", {
         event, source: "dowse", hoverParent: target, targetEl: target, linktext: path, sourcePath: "",
@@ -267,19 +297,23 @@ export default class DowsePlugin extends Plugin {
   /** Off for this vault: reading stops; `forget` also deletes the index. */
   async turnOff(forget: boolean): Promise<void> {
     this.settings.on = false;
-    await this.save();
+    this.selection++;
+    this.forgetOnOpen = forget;
+    this.fileEvents.clear();
     const engine = this.engine;
     this.engine = null;
-    if (engine && forget) await engine.store.clear();
-    engine?.close();
     this.showStatus();
     this.notify();
+    this.stopping = (async () => { await this.opening; await this.fileEvents.settled(); await engine?.close(forget); this.forgetOnOpen = false; })();
+    await Promise.all([this.save(), this.stopping]);
   }
 
   async setSearched(path: string, searched: boolean): Promise<void> {
     this.settings = searched ? turnOn(this.settings, path) : turnOff(this.settings, path);
+    this.selection++;
+    this.engine?.search.changed(true);
+    this.notify();
     await this.save();
-    this.engine?.search.changed();   // found, or not, from the next search on
     await this.engine?.indexer.sync();
     this.showStatus();
   }
@@ -306,19 +340,33 @@ export default class DowsePlugin extends Plugin {
   }
 
   private registerEvents(): void {
-    const file = (f: TAbstractFile) => f instanceof TFile ? { path: f.path, mtime: f.stat.mtime, size: f.stat.size } : null;
-    const later = (f: TAbstractFile) => {   // once the file has been still a moment (an edit is many saves)
-      window.clearTimeout(this.quiet.get(f.path));
-      this.quiet.set(f.path, window.setTimeout(() => {
-        this.quiet.delete(f.path);
-        const now = file(f);
-        if (now && this.engine) void this.engine.indexer.changed(now);
-      }, QUIET_MS));
-    };
-    this.registerEvent(this.app.vault.on("create", (f) => this.engine && later(f)));
-    this.registerEvent(this.app.vault.on("modify", (f) => this.engine && later(f)));
-    this.registerEvent(this.app.vault.on("delete", (f) => void this.engine?.indexer.removed(f.path)));
-    this.registerEvent(this.app.vault.on("rename", (f, old) => void this.engine?.indexer.renamed(old, f.path)));
+    this.fileEvents = new FileEvents(async (path) => {
+      const file = this.app.vault.getFileByPath(path);
+      if (file && this.engine) await this.engine.indexer.changed({ path, mtime: file.stat.mtime, size: file.stat.size });
+    }, (error) => console.error("Dowse file change", error), QUIET_MS);
+    const later = (f: TAbstractFile) => { if (this.engine && f instanceof TFile) this.fileEvents.queue(f.path); };
+    this.registerEvent(this.app.vault.on("create", later));
+    this.registerEvent(this.app.vault.on("modify", later));
+    this.registerEvent(this.app.vault.on("delete", (f) => {
+      this.fileEvents.cancel(f.path, f instanceof TFolder);
+      this.selection++;
+      this.engine?.search.changed(true);
+      this.notify();
+      void this.fileEvents.order(async () => { await this.engine?.indexer.removed(f.path); });
+    }));
+    this.registerEvent(this.app.vault.on("rename", (f, old) => {
+      this.fileEvents.cancel(old, f instanceof TFolder);
+      this.settings = renamed(this.settings, old, f.path);
+      this.selection++;
+      this.engine?.search.changed(true);
+      this.notify();
+      const to = f.path;
+      void this.fileEvents.order(async () => {
+        await this.save();
+        await this.engine?.indexer.renamed(old, to);
+        await this.engine?.indexer.sync();
+      });
+    }));
     this.registerEvent(this.app.workspace.on("file-menu", (menu, target) => {
       if (!this.settings.on || !(target instanceof TFile || target instanceof TFolder) || target.path === "/") return;
       const searched = isOn(this.settings, target.path);
@@ -327,7 +375,8 @@ export default class DowsePlugin extends Plugin {
         .setIcon(searched ? "search-x" : "search")
         .onClick(async () => {
           await this.setSearched(target.path, !searched);
-          new Notice(searched ? `Dowse won't search ${target.name}` : `Dowse searches ${target.name} again`);
+          new Notice(searched ? `Dowse won't search ${target.name}` : isOn(this.settings, target.path)
+            ? `Dowse searches ${target.name} again` : `${target.name} is still inside an excluded folder. Turn that folder back on first.`);
         }));
     }));
   }

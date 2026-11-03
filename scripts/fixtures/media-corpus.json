@@ -1,0 +1,53 @@
+{
+  "description": "Synthetic spoken passages and independent section-level timestamp labels. No transcripts are installed in the evaluation vault.",
+  "audio": [
+    { "name": "field-01.mp3", "sections": [
+      { "text": "Our community garden collects rainwater from the roof of the tool shed. A storage tank feeds the vegetable beds through a simple drip irrigation system. Check the filter before opening the valve each morning.", "queries": ["rainwater collected for drip irrigation", "water tank beside the garden shed"] },
+      { "text": "The next subject is compost. Mix dry fallen leaves with fresh vegetable scraps, turn the pile to add air, and keep it slightly moist. Do not put plastic wrappers or metal cans into the compost bay.", "queries": ["how to mix leaves and vegetable scraps for compost", "turning a compost pile to add air"] },
+      { "text": "Finally, the pollinator strip contains sunflowers and lavender. These flowers attract bees and butterflies. Leave a small patch of bare soil for ground nesting insects and avoid spraying the flowers while insects are visiting.", "queries": ["flowers planted for bees and butterflies", "sunflowers and lavender in a pollinator strip"] }
+    ] },
+    { "name": "field-02.m4a", "sections": [
+      { "text": "For a slow tomato sauce, soften chopped onion and garlic in olive oil. Add crushed tomatoes and basil, then simmer gently for forty minutes. Stir the sauce occasionally and add a little pasta water before serving.", "queries": ["tomato sauce simmered with garlic and basil", "adding pasta water to tomato sauce"] },
+      { "text": "Now we are baking sourdough bread. Let the dough rise, shape the loaf and place it in a heated covered pot. Bake with the lid on for twenty minutes, then remove the lid so the crust turns golden brown.", "queries": ["baking sourdough in a covered pot", "removing the lid to brown a bread crust"] },
+      { "text": "A kitchen thermometer helps us measure temperature consistently. Clean the probe before and after use. Insert it into the thickest part rather than resting it against the hot metal tray, and record the reading in the cooking notes.", "queries": ["using a kitchen thermometer probe", "measuring temperature away from the metal tray"] }
+    ] },
+    { "name": "field-03.ogg", "sections": [
+      { "text": "The login outage began when an authentication certificate expired. Rotate the certificate, deploy the updated configuration and verify login from a clean browser. Add an expiry alert and automate renewal so the same incident does not happen again.", "queries": ["login failed because an authentication certificate expired", "automating certificate renewal after an outage"] },
+      { "text": "A backup is useful only if we can restore it. Each month, copy a small sample to a separate machine and verify that the files open correctly. Keep the test isolated from the production data and write down the recovery steps.", "queries": ["testing a backup by restoring files", "monthly recovery test on a separate machine"] },
+      { "text": "Rate limiting protects the service during bursts of requests. Give each client a small request budget, return a clear retry response when that budget is exhausted, and track rejected requests separately from application errors in the dashboard.", "queries": ["giving each client a request budget", "rate limiting and retry responses"] }
+    ] },
+    { "name": "field-04.flac", "sections": [
+      { "text": "Jupiter is a gas giant with bright cloud bands. An amateur telescope can reveal its four largest moons as small points of light beside the planet. Sketch the positions on different evenings to see how those moons move.", "queries": ["observing Jupiter and its moons with a telescope", "bright cloud bands on a gas giant"] },
+      { "text": "A black hole bends the path of nearby light because its gravity is extremely strong. Astronomers study hot material orbiting around it, rather than seeing light emitted from inside the event horizon. The image depends on observations from several telescopes.", "queries": ["astronomers observing a black hole", "hot material around an event horizon"] },
+      { "text": "A radio telescope collects signals that our eyes cannot see. Teams compare measurements from dishes in different locations and carefully remove interference from local transmitters. The resulting data can reveal clouds of gas between stars.", "queries": ["a radio telescope detecting gas between stars", "removing transmitter interference from radio astronomy"] }
+    ] },
+    { "name": "field-05.wav", "sections": [
+      { "text": "To repair a bicycle puncture, remove the wheel and find the hole in the inner tube. Roughen the area gently, apply the patch, then check that no sharp object remains inside the tyre before putting the wheel back.", "queries": ["patching a punctured bicycle inner tube", "checking a bicycle tyre for a sharp object"] },
+      { "text": "Before riding, squeeze both brake levers. The pads should contact the rim firmly without rubbing the tyre. If the lever touches the handlebar, check the cable adjustment and test the brakes again at walking speed.", "queries": ["checking bicycle brake pads and levers", "a brake lever touching the handlebar"] },
+      { "text": "A clean bicycle chain runs more smoothly. Wipe away the old grime, apply a small amount of suitable lubricant to the rollers, and remove the excess with a cloth. Keep oil away from the braking surfaces.", "queries": ["cleaning and lubricating a bicycle chain", "keeping chain oil away from brakes"] }
+    ] },
+    { "name": "field-06.mp3", "sections": [
+      { "text": "The museum archive stores fragile letters in acid free folders. Staff photograph each page, record its catalogue number and handle the paper with clean dry hands. A reading room copy lets visitors study the text without repeatedly handling the original.", "queries": ["preserving fragile letters in a museum archive", "photographing pages and recording catalogue numbers"] },
+      { "text": "The ceramics exhibition shows bowls and cups from several centuries. Look at the glaze, the shape of the handles and the marks left by the potter. The display labels explain how different firing temperatures changed the surface colours.", "queries": ["an exhibition of glazed pottery", "how firing temperature changes ceramic colours"] },
+      { "text": "Painting conservators first document the condition of the surface. They examine small areas under magnification and test cleaning methods before treating the whole work. Every intervention is recorded so a future conservator can understand what was changed.", "queries": ["documenting the condition of an old painting", "conservators testing a cleaning method under magnification"] }
+    ] },
+    { "name": "field-07.m4a", "sections": [
+      { "text": "In Lisbon we took tram twenty eight through the streets of Alfama. Later we walked beside the Tagus river and stopped in Belem for custard pastries. The route ended at a viewpoint above the city at sunset.", "queries": ["tram twenty eight in Lisbon", "custard pastries in Belem beside the Tagus"] },
+      { "text": "Our spring visit to Kyoto included temple gardens and the bamboo forest at Arashiyama. We walked beside a canal under cherry blossoms, then took the train back before the evening rush. Comfortable shoes were more useful than a heavy suitcase.", "queries": ["cherry blossoms and temples in Kyoto", "the bamboo forest at Arashiyama"] },
+      { "text": "For an Iceland road trip, bring waterproof layers and check the weather before driving into the mountains. The route passes waterfalls, glaciers and black sand beaches. Leave time for road closures rather than planning every day too tightly.", "queries": ["waterfalls and glaciers on an Iceland road trip", "waterproof clothing and road closures in Iceland"] }
+    ] },
+    { "name": "field-08.ogg", "sections": [
+      { "text": "Some whales travel thousands of kilometres between feeding and breeding areas. Researchers use photographs of tail patterns to identify individuals over many years. These observations help show how migration routes change with ocean conditions.", "queries": ["identifying migrating whales from tail photographs", "whales travelling between feeding and breeding grounds"] },
+      { "text": "Coral reefs provide shelter for many species of fish. The reef depends on a partnership between tiny animals and algae living in their tissues. Long periods of unusually warm water can disrupt that partnership and leave the coral pale.", "queries": ["coral reefs and algae living in their tissues", "warm water causing coral to become pale"] },
+      { "text": "Ocean currents move heat and nutrients across large distances. Winds drive surface water while differences in temperature and salt content influence deeper circulation. A map of those currents helps explain why nearby coastlines can have very different climates.", "queries": ["how salt and temperature affect deep ocean currents", "ocean circulation moving heat and nutrients"] }
+    ] }
+  ],
+  "video": [
+    { "name": "clip-01.mp4", "shots": [ ["IMG_1001.jpg", "a zebra"], ["IMG_1003.jpg", "the Eiffel tower"], ["IMG_1004.jpg", "pizza"] ] },
+    { "name": "clip-02.mp4", "shots": [ ["IMG_1002.jpg", "a dog"], ["IMG_1007.jpg", "a sunflower"], ["IMG_1008.jpg", "lightning in a thunderstorm"] ] },
+    { "name": "clip-03.mp4", "shots": [ ["IMG_1005.jpg", "the inside of a computer"], ["IMG_1006.jpg", "a penguin"], ["IMG_1009.jpg", "a violin"] ] },
+    { "name": "clip-04.mp4", "shots": [ ["DSC_2001.jpg", "fruit"], ["DSC_2002.jpg", "snow covered mountains"], ["DSC_2003.jpg", "a kitten"] ] },
+    { "name": "clip-05.mp4", "shots": [ ["PXL_3001.jpg", "a hamburger"], ["PXL_3002.jpg", "a cactus"], ["IMG_1002.jpg", "a dog"] ] }
+  ],
+  "absent": ["a rocket launching into space", "an opera singer on stage", "instructions for replacing a car battery", "a horse race", "a lecture about medieval castles", "a person playing tennis"]
+}

@@ -7,9 +7,10 @@
   import Wall from "./wall/Wall.svelte";
   import Icon from "./wall/Icon.svelte";
   import ResultList from "./ResultList.svelte";
+  import MediaMoments from "./MediaMoments.svelte";
   import MapFloor, { type MapAisle, type MapPiece } from "./explore/MapFloor.svelte";
   import { rankedStep } from "./explore/explore-view.ts";
-  import type { ExploreMap } from "../engine/search/explore.ts";
+  import type { ExploreGrouping, ExploreMap } from "../engine/search/explore.ts";
   import { CLOSEST_LABEL } from "./wall/search-confidence.ts";
   import { folderOf, lineOf, nameOf, pieceOf, shownOf, titleOf, VISUAL, type Shown } from "./results.ts";
   import type { Controller } from "./controller.ts";
@@ -17,6 +18,8 @@
   import { heldText, modelTrouble, timeLeft } from "../plugin/status.ts";
   import { dragLink } from "./drag.ts";
   import { radios } from "./radios.ts";
+  import { dateRange, filtersFor, meetsFilters } from "../plugin/filters.ts";
+  import { KIND_NAME } from "./results.ts";
 
   let { controller, initial = "" }: { controller: Controller; initial?: string } = $props();
 
@@ -29,15 +32,29 @@
   // svelte-ignore state_referenced_locally
   let query = $state(initial);   // (the tab's first query: read once)
   let kind = $state("all");
+  let folders = $state<string[]>([]);
+  let from = $state("");
+  let to = $state("");
+  let inferDate = $state(true);
+  let inferKinds = $state(true);
+  // svelte-ignore state_referenced_locally
+  let folderOptions = $state(controller.folders());
+  let error = $state("");
+  const dateSpan = $derived(dateRange(from, to));
+  const options = $derived({ within: folders, dateSpan, inferDate, inferKinds });
   const LAYOUTS = ["wall", "list", "map"];
   // The list first (it reads at any size); the wall and the map a click away, and remembered once chosen
   let layout = $state(LAYOUTS.includes(stored("dowse-layout", "list")) ? stored("dowse-layout", "list") : "list");
+  let grouping = $state<ExploreGrouping>(stored("dowse-explore-grouping", "content") === "folder" ? "folder" : "content");
   let answer = $state<Answer | null>(null);
   let recent = $state<Shown[]>([]);
   let selected = $state(-1);   // (none until a search, or ↑/↓: a row lit before anything was done meant nothing)
   let busy = $state(false);
+  let searchIntent = $state(0);   // user searches move the camera; background index refreshes keep the current view
   // svelte-ignore state_referenced_locally
   let on = $state(controller.on());   // (the controller stays the same; these follow it by subscription)
+  // svelte-ignore state_referenced_locally
+  let selection = $state(controller.selection());
   const own = (text: string) => text.replace(/^Dowse · /, "");   // (in Dowse's own tab, its name goes without saying)
   // svelte-ignore state_referenced_locally
   let status = $state(own(controller.status()));
@@ -48,32 +65,36 @@
   // svelte-ignore state_referenced_locally
   let parts = $state(controller.parts());
   // svelte-ignore state_referenced_locally
-  const counts = controller.counts();   // (for the first screen, and the kinds' chips)
+  let counts = $state(controller.counts());
   // The kinds this vault has (and the one chosen): a chip for a kind with no file in it is a choice that can't matter
   const kindsHere = $derived(KINDS.filter(([id, , of]) => !of.length || of.some((k) => (counts[k] ?? 0) > 0) || id === kind));
   let input = $state<HTMLInputElement>();
   let map = $state<ExploreMap | null>(null);
+  let mapError = $state("");
+  let mapAsked = 0;
   let chosen = $state<string | null>(null);   // the case picked on the floor
   let floor = $state<MapFloor | null>(null);
   let asked = 0;
   let timer = 0;
 
-  const searching = $derived(query.trim().length > 0);
-  const hits = $derived(searching && answer ? answer.hits.map(shownOf) : []);
-  const clear = $derived(!answer || answer.strong > 0);
+  const searching = $derived(query.trim().length > 0 || folders.length > 0 || !!dateSpan);
+  const hits = $derived.by(() => { void selection; return searching && answer ? answer.hits.filter(h => controller.active(h.path)).map(shownOf) : []; });
+  const matchCount = $derived.by(() => { void selection; return answer?.hits.slice(0, answer.strong).filter(h => controller.active(h.path)).length ?? 0; });
+  const clear = $derived(!answer || matchCount > 0);
   const kinds = $derived(KINDS.find(([id]) => id === kind)?.[2] ?? []);
+  const applied = $derived(filtersFor(query, { ...options, kinds }));
   // Before a search, the vault's latest files, of the kinds chosen (the chips filter them too)
-  const latest = $derived(kinds.length ? recent.filter((item) => kinds.includes(item.kind)) : recent);
+  const latest = $derived.by(() => { void selection; return recent.filter(item => controller.active(item.path) && meetsFilters(item, applied)); });
   // A search's list: its matches, and what's less likely folded into one row (opened when asked); with no clear match,
   // the closest ten (they're the answer then)
   let more = $state(false);
-  const cut = $derived(!answer ? hits.length : answer.strong > 0 ? answer.strong : 10);
+  const cut = $derived(!answer ? hits.length : matchCount > 0 ? matchCount : 10);
   const listed = $derived(more ? hits : hits.slice(0, cut));
   const shown: Shown[] = $derived(searching ? (layout === "list" ? listed : hits) : latest);
 
   const pieces = $derived.by(() => {
     if (!searching) return latest.map((item) => pieceOf(item, { strong: true }));
-    const strong = answer?.strong ?? 0;
+    const strong = matchCount;
     const found = hits.map((hit, i) => pieceOf(hit, { strong: clear && i < strong, closest: !clear || i >= strong, score: hit.score }));
     const seen = new Set(hits.map((h) => h.path));
     const rest = latest.filter((item) => !seen.has(item.path)).map((item) => pieceOf(item, { strong: false, back: true }));
@@ -81,19 +102,29 @@
   });
 
   // The floor: the map's cases of the kinds chosen; a search shows its results where they stand
-  const mapPieces: MapPiece[] = $derived((map?.pieces ?? []).filter((p) => !kinds.length || kinds.includes(p.kind))
-    .map((p) => ({ ...p, name: nameOf(p.path), folder: folderOf(p.path) || "/", visual: VISUAL.has(p.kind) })));
+  const collectionFiles = $derived(new Map(recent.map(file => [file.path, file])));
+  const mapPieces: MapPiece[] = $derived.by(() => { void selection;
+    return (map?.pieces ?? []).filter(p => controller.active(p.path) && meetsFilters(collectionFiles.get(p.path) ?? p, applied))
+      .map(p => ({ ...p, name: nameOf(p.path), folder: folderOf(p.path) || "/", visual: VISUAL.has(p.kind), version: collectionFiles.get(p.path)?.mtime }));
+  });
   const mapAisles: MapAisle[] = $derived.by(() => {
-    if (!kinds.length) return map?.aisles ?? [];
+    void selection;
+    if (!applied.kinds.length && !applied.within.length && !applied.date) return map?.aisles ?? [];
     const counts = new Map<number, number>();
-    for (const p of mapPieces) counts.set(p.aisle, (counts.get(p.aisle) ?? 0) + 1);
+    for (const aisle of map?.aisles ?? []) {
+      const count = (map?.membership[aisle.id] ?? []).filter(path => {
+        const file = collectionFiles.get(path);
+        return file && controller.active(path) && meetsFilters(file, applied);
+      }).length;
+      if (count) counts.set(aisle.index, count);
+    }
     return (map?.aisles ?? []).filter((a) => counts.has(a.index)).map((a) => ({ ...a, count: counts.get(a.index)! }));
   });
   const onFloor = $derived(new Set(mapPieces.map((p) => p.path)));
   const ranked = $derived(hits.filter((h) => onFloor.has(h.path)));
-  const found = $derived(searching && answer && !busy ? new Map(ranked.map((h, i) => [h.path, i])) : null);
+  const found = $derived(searching && answer ? new Map(ranked.map((h, i) => [h.path, i])) : null);
   const scores = $derived(found ? new Map(ranked.map((h) => [h.path, h.score ?? 0])) : null);
-  const matches = $derived(new Set(hits.slice(0, answer?.strong ?? 0).map((h) => h.path)));
+  const matches = $derived(new Set(hits.slice(0, matchCount).map((h) => h.path)));
   // The numbered ones (the matches, or the first five when nothing clearly matches), at most five, named beside the floor
   const rail = $derived(ranked.slice(0, Math.min(5, clear ? matches.size : 5)));
 
@@ -134,7 +165,9 @@
 
   // The first screen: the model's parts for this vault's pictures and sound, offered with their size (checked when the
   // vault has such files: unread, they're found by their names only, and a search for what they show finds nothing)
+  // svelte-ignore state_referenced_locally
   let wantImages = $state(Boolean(counts.image || counts.video));
+  // svelte-ignore state_referenced_locally
   let wantSound = $state(Boolean(counts.audio || counts.video));
 
   // Files only found by name (their part is off), said where they may be what's looked for: their kind chosen, among
@@ -142,7 +175,7 @@
   const unread = $derived.by(() => {
     const out: { part: "images" | "sound"; text: string; button: string }[] = [];
     const wanted = (k: string[]) => kinds.some((x) => k.includes(x))
-      || (searching && !!answer && !busy && (answer.strong === 0 || answer.hits.some((h) => k.includes(h.kind))));
+      || (searching && !!answer && !busy && (matchCount === 0 || hits.some((h) => k.includes(h.kind))));
     if (!parts.images && (counts.image || counts.video) && wanted(["image", "video"]))
       out.push({ part: "images", button: "Read images (336 MB)",
                  text: `${both(many(counts.image, "image", "images"), many(counts.video, "video", "videos"))}: found by their names only, until Dowse reads what they show.` });
@@ -156,15 +189,18 @@
     if (!on) return "";
     if (layout === "map" && !searching) {
       if (!map) return "Laying out the vault…";
+      if (grouping === "folder") return `${map.total.toLocaleString()} files in ${map.aisles.length} folder group${map.aisles.length === 1 ? "" : "s"}, grouped by folder` +
+        (strip ? "" : ` · ${status}`);
       const named = map.aisles.some((a) => !a.label.startsWith("Aisle "));
       return `${map.total.toLocaleString()} files in ${map.aisles.length} aisle${map.aisles.length === 1 ? "" : "s"}, ` +
         `grouped by what's in them${named || !map.aisles.length ? "" : " (named once the model has started)"}` +
         (strip ? "" : ` · ${status}`);
     }
-    if (!searching) return strip ? "" : `Recent files · ${status}`;   // (what the rows are, and how reading is)
-    if (busy && !answer) return "Searching…";
+    if (!searching) return `${latest.length.toLocaleString()} file${latest.length === 1 ? "" : "s"}${strip ? "" : ` · ${status}`}`;
+    if (busy) return "Searching…";
     if (!answer) return "";
-    const matches = answer.strong;
+    if (!query.trim()) return `${answer.hits.length.toLocaleString()} file${answer.hits.length === 1 ? "" : "s"}`;
+    const matches = matchCount;
     const words = answer.meaning ? "" : " · words only, while the model starts";
     if (!answer.hits.length) return `Nothing found${words}`;
     return (matches ? `${matches} match${matches === 1 ? "" : "es"}` : CLOSEST_LABEL) + words;
@@ -174,39 +210,66 @@
    * what's opened stays open, nothing shows as searching). */
   async function run(again = false): Promise<void> {
     const mine = ++asked;
-    if (!query.trim()) { answer = null; busy = false; selected = -1; return; }
+    if (!query.trim() && !folders.length && !dateSpan) { answer = null; busy = false; selected = -1; chosen = null; searchIntent++; return; }
+    if ((from || to) && !dateSpan) { error = "Choose a valid date range, with the start before the end."; busy = false; return; }
+    error = "";
     const kept = again ? shown[selected]?.path : undefined;
     if (!again) busy = true;
     try {
-      const found = await controller.search(query, kinds);
+      const found = await controller.search(query, kinds, options);
       if (mine === asked) {
         answer = found;
+        if (!again) searchIntent++;
         if (again) {
           const at = kept ? found.hits.findIndex((h) => h.path === kept) : -1;
           selected = at >= 0 ? at : selected >= 0 ? 0 : -1;
         } else {
           selected = 0; more = false;
-          if (layout === "map") chosen = ranked[0]?.path ?? null;   // the first result named on the floor at once
         }
+        if (layout === "map" && (!again || !found.hits.some(h => h.path === chosen)))
+          chosen = found.hits.find(h => onFloor.has(h.path))?.path ?? null;
       }
+    } catch (e) {
+      if (mine === asked) error = "Search could not finish. Try again.";
     } finally {
       if (mine === asked) busy = false;
     }
   }
 
   function changed(): void {
+    inferDate = true; inferKinds = true;
+    asked++;   // invalidate an old response immediately, including during the debounce interval
     window.clearTimeout(timer);
-    timer = window.setTimeout(run, 150);
+    if (!query.trim()) { void run(); return; }
+    busy = true;
+    timer = window.setTimeout(() => void run(), 150);
   }
 
   async function loadRecent(): Promise<void> {
-    if (controller.on()) recent = await controller.recent();
+    try { if (controller.on()) recent = await controller.recent(); }
+    catch { /* A view may close while its index is shutting down. */ }
   }
 
   async function loadMap(): Promise<void> {
     if (!controller.on()) return;
-    const next = await controller.explore();
-    if (next !== map) map = next;
+    const mine = ++mapAsked, mode = grouping;
+    try {
+      const next = await controller.explore(mode);
+      if (mine === mapAsked && mode === grouping) {
+        if (next !== map) map = next;
+        if (searching && (!chosen || !ranked.some(h => h.path === chosen))) chosen = ranked[0]?.path ?? null;
+        mapError = "";
+      }
+    } catch {
+      if (mine === mapAsked) mapError = "The map could not load. Try again.";
+    }
+  }
+
+  function setGrouping(next: ExploreGrouping): void {
+    if (next === grouping) return;
+    grouping = next; map = null; mapError = ""; chosen = null;
+    try { localStorage.setItem("dowse-explore-grouping", next); } catch { /* private storage */ }
+    void loadMap();
   }
 
   /** What opens for a case: the search's hit (at its line or page), else the file. */
@@ -223,11 +286,20 @@
 
   function setLayout(next: string): void {
     layout = next;
-    if (next === "map") void loadMap();
+    if (next === "map") { if (searching && !ranked.some(h => h.path === chosen)) chosen = ranked[0]?.path ?? null; void loadMap(); }
     try { localStorage.setItem("dowse-layout", next); } catch { /* private storage */ }
   }
 
+  function folderChanged(path: string, checked: boolean): void {
+    folders = checked ? [...folders, path] : folders.filter(p => p !== path);
+    void run();
+  }
+
+  function removeDate(): void { from = ""; to = ""; inferDate = false; void run(); }
+  function removeKind(): void { kind = "all"; inferKinds = false; void run(); }
+
   function keys(event: KeyboardEvent): void {
+    if (busy && event.key === "Enter") { event.preventDefault(); return; }
     if (layout === "map" && found) {   // through the results where they stand
       const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
       if (step) {
@@ -246,7 +318,7 @@
     if (event.key === "ArrowDown") { selected = Math.min(selected + 1, items.length - 1); event.preventDefault(); }
     else if (event.key === "ArrowUp") { selected = Math.max(selected - 1, 0); event.preventDefault(); }
     else if (event.key === "Enter" && items[selected]) { controller.open(items[selected], event.ctrlKey || event.metaKey); event.preventDefault(); }
-    else if (event.key === "Escape" && query) { query = ""; answer = null; selected = -1; event.preventDefault(); }
+    else if (event.key === "Escape" && query) { query = ""; void run(); event.preventDefault(); }
   }
 
   onMount(() => {
@@ -258,6 +330,7 @@
     const stop = controller.subscribe(() => {
       const wasOn = on;
       on = controller.on();
+      selection = controller.selection();
       status = own(controller.status());
       dark = controller.dark();
       reading = controller.reading();
@@ -268,11 +341,12 @@
       lastReady = ready;
     });
     const unfollow = controller.follow(() => {   // remade in the background as the vault is read (not polled)
+      counts = controller.counts(); folderOptions = controller.folders();
       if (searching && answer && !busy) void run(true);   // what's newly read may be what's looked for
-      if (!searching) void loadRecent();
+      void loadRecent();   // refresh modification dates and preview versions even while a search is open
       if (layout === "map") void loadMap();
     });
-    return () => { stop(); unfollow(); window.clearTimeout(timer); };
+    return () => { stop(); unfollow(); asked++; mapAsked++; window.clearTimeout(timer); };
   });
 </script>
 
@@ -280,6 +354,7 @@
   {#if !on}
     <div class="dowse-off">
       <h2>Search this vault by what's in it</h2>
+      {#if controller.problem()}<p role="alert">{controller.problem()}</p>{/if}
       <p>Describe a note, a PDF or a canvas in your own words, in any of 100+ languages: Dowse finds it, at the right
         line or page. Everything stays on this computer.</p>
       <ol class="dowse-steps">
@@ -306,7 +381,7 @@
           <span class="dowse-quiet">Unchecked, they're found by their names only (Settings › Dowse can turn them on later).</span>
         </div>
       {/if}
-      <button class="mod-cta" onclick={() => controller.turnOn({ images: wantImages, sound: wantSound })}>Turn on for this vault</button>
+      <button class="mod-cta" disabled={!!controller.problem()} onclick={() => controller.turnOn({ images: wantImages, sound: wantSound })}>Turn on for this vault</button>
       <p class="dowse-quiet">Folders and files can be left out (right-click, “Dowse: stop searching”), and Dowse turned
         off or its index deleted in Settings › Dowse.</p>
     </div>
@@ -325,18 +400,62 @@
                   aria-checked={layout === "wall"} tabindex={(layout === "wall") ? 0 : -1} onclick={() => setLayout("wall")}><Icon name="wall" size={16} /></button>
           <button class="clickable-icon" class:is-active={layout === "list"} aria-label="As a list" role="radio"
                   aria-checked={layout === "list"} tabindex={(layout === "list") ? 0 : -1} onclick={() => setLayout("list")}><Icon name="list" size={16} /></button>
-          <button class="clickable-icon" class:is-active={layout === "map"} aria-label="Explore: the whole vault, by what's in it"
+          <button class="clickable-icon" class:is-active={layout === "map"} aria-label="Explore: the whole vault"
                   role="radio" aria-checked={layout === "map"} tabindex={(layout === "map") ? 0 : -1} onclick={() => setLayout("map")}><Icon name="map" size={16} /></button>
         </div>
       </div>
+      {#if layout === "map"}
+        <div class="dowse-grouping">
+          <span>Group</span>
+          <div class="dowse-kinds" role="radiogroup" use:radios aria-label="Group Explore by">
+            <button class="dowse-chip" class:is-active={grouping === "content"} role="radio" aria-checked={grouping === "content"}
+                    tabindex={grouping === "content" ? 0 : -1} onclick={() => setGrouping("content")}
+                    title="Automatically group files with similar content">By content</button>
+            <button class="dowse-chip" class:is-active={grouping === "folder"} role="radio" aria-checked={grouping === "folder"}
+                    tabindex={grouping === "folder" ? 0 : -1} onclick={() => setGrouping("folder")}
+                    title="Group files by their parent folder; root files have their own group">By folder</button>
+          </div>
+        </div>
+      {/if}
       <div class="dowse-bar">
         <div class="dowse-kinds" role="radiogroup" use:radios aria-label="Kinds of files">
           {#each kindsHere as [id, label]}
             <button class="dowse-chip" class:is-active={kind === id} role="radio" aria-checked={kind === id} tabindex={(kind === id) ? 0 : -1}
-                    onclick={() => { kind = id; void run(); }}>{label}</button>
+                    onclick={() => { kind = id; inferKinds = id !== "all"; void run(); }}>{label}</button>
           {/each}
         </div>
+        <div class="dowse-filter-controls">
+          <details class="dowse-filter-picker">
+            <summary><Icon name="folder" size={14} /> Folders{folders.length ? ` (${folders.length})` : ""}</summary>
+            <div class="dowse-folder-options">
+              {#if !folderOptions.length}<span>No folders in this vault.</span>{/if}
+              {#each folderOptions as path}
+                <label><input type="checkbox" checked={folders.includes(path)} onchange={(e) => folderChanged(path, e.currentTarget.checked)} />
+                  <span>{path === "/" ? "Vault root files" : path}</span></label>
+              {/each}
+            </div>
+          </details>
+          <details class="dowse-filter-picker">
+            <summary><Icon name="clock" size={14} /> Date</summary>
+            <div class="dowse-date-options">
+              <label>From <input type="date" bind:value={from} onchange={() => { inferDate = false; void run(); }} /></label>
+              <label>Through <input type="date" bind:value={to} onchange={() => { inferDate = false; void run(); }} /></label>
+              <button onclick={removeDate}>Clear date</button>
+            </div>
+          </details>
+        </div>
       </div>
+      {#if folders.length || applied.date || applied.kinds.length}
+        <div class="dowse-filter-chips" aria-label="Active search filters">
+          {#each folders as path}<button class="dowse-chip" aria-label={`Remove folder filter ${path}`} onclick={() => folderChanged(path, false)}>
+            Folder: {path === "/" ? "Vault root files" : path} ×</button>{/each}
+          {#if applied.date}<button class="dowse-chip" onclick={removeDate} aria-label="Remove date filter">
+            Date: {applied.date.label}{applied.inferredDate ? " (from query)" : ""} ×</button>{/if}
+          {#if applied.kinds.length}<button class="dowse-chip" onclick={removeKind} aria-label="Remove file type filter">
+            Type: {applied.kinds.map(k => KIND_NAME[k] ?? k).join(", ")}{applied.inferredKinds ? " (from query)" : ""} ×</button>{/if}
+        </div>
+      {/if}
+      {#if error}<p class="dowse-search-error" role="alert">{error}</p>{/if}
       {#if strip}
         <div class="dowse-strip">
           <span class="dowse-unseen" role="status">{heard}</span>
@@ -357,25 +476,31 @@
         </div>
       {/each}
       <div class="dowse-summary" aria-live="polite">{summary}</div>
+      {#if searching && !busy && layout !== "list"}
+        {@const media = layout === "map" ? hits.find(h => h.path === chosen) : shown[selected]}
+        {#if media}<MediaMoments item={media} {controller} />{/if}
+      {/if}
     </div>
     {#if layout !== "list" && searching && hits.length}
       <ul class="dowse-unseen" role="listbox" id={listId} aria-label="Results">
         {#each hits as hit, i (hit.path + ":" + hit.loc)}
           <li role="option" id={`${listId}-${i}`} aria-selected={`${listId}-${i}` === current}>
-            {answer && answer.strong > 0 && i >= answer.strong ? "Less likely: " : ""}{titleOf(hit)}, {lineOf(hit)}
+            {answer && matchCount > 0 && i >= matchCount ? "Less likely: " : ""}{titleOf(hit)}, {lineOf(hit)}
           </li>
         {/each}
       </ul>
     {/if}
-    <div class="dowse-body" class:dowse-floor={layout === "map"}>
+    <div class="dowse-body" class:dowse-floor={layout === "map"} aria-busy={busy}>
       {#if layout === "map"}
-        {#if mapPieces.length}
-          <MapFloor bind:this={floor} pieces={mapPieces} aisles={mapAisles} {found} {scores} {clear} {matches} {dark}
+        {#if mapError}
+          <div class="dowse-empty" role="alert">{mapError} <button onclick={() => void loadMap()}>Try again</button></div>
+        {:else if mapPieces.length}
+          <MapFloor bind:this={floor} pieces={mapPieces} aisles={mapAisles} {found} {scores} {clear} {matches} {dark} {searchIntent}
                     selected={chosen}
                     picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px,
                                                                found?.has(piece.path) ? answer?.terms ?? [] : [])}
                     onselect={(piece) => (chosen = piece.path)}
-                    onopen={(piece) => controller.open(shownFor(piece.path), false)}
+                    onopen={(piece) => { if (!busy) controller.open(shownFor(piece.path), false); }}
                     onhover={(event, piece, target) => controller.hover(event, piece.path, target)}
                     ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)}
                     onstep={(step) => { const path = rankedStep(ranked.map((h) => h.path), chosen, step);
@@ -392,21 +517,23 @@
             </ol>
           {/if}
         {:else if map}
-          <div class="dowse-empty">{kinds.length ? "No files of this kind on the floor." : "Files appear here as Dowse reads them."}</div>
+          <div class="dowse-empty">{applied.kinds.length || applied.within.length || applied.date ? "No files meet these filters on the floor." : "Files appear here as Dowse reads them."}</div>
+        {:else}
+          <div class="dowse-empty" role="status">Laying out the vault…</div>
         {/if}
       {:else if layout === "wall" && pieces.length}
         <Wall {pieces} collectionKeys={latest.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
               terms={answer?.terms ?? []} {searching} {clear} {dark}
               picture={(piece, px, terms) => controller.picture(piece, px, terms)}
-              onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item) controller.open(item, false); }}
+              onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item && !busy) controller.open(item, false); }}
               ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
-        <ResultList items={shown} {selected} {controller} onselect={(i) => (selected = i)}
-                    strong={searching && answer ? answer.strong : null} id={listId}
+        <ResultList items={shown} {selected} {controller} pending={busy} onselect={(i) => (selected = i)}
+                    strong={searching && answer ? matchCount : null} id={listId}
                     more={searching && !more && hits.length > shown.length ? hits.length - shown.length : 0}
                     onmore={() => (more = true)} />
       {:else if searching && answer && !busy}
-        <div class="dowse-empty">Nothing in this vault matches “{query}”.</div>
+        <div class="dowse-empty">{query.trim() ? `Nothing in this vault matches “${query}”.` : "No files meet these filters."}</div>
       {:else if !searching}
         <div class="dowse-empty">{status}</div>
       {/if}

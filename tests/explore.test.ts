@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { arrange, buildMap, fileVectors, grouped, type MapFile } from "../src/engine/search/explore.ts";
+import { arrange, buildFolderMap, buildMap, fileVectors, grouped, type MapFile } from "../src/engine/search/explore.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("fixtures/explore.json", import.meta.url), "utf8"));
 const bytes = (b64: string) => { const b = Buffer.from(b64, "base64"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
@@ -72,4 +72,37 @@ test("a vault with few files, or files without vectors", async () => {
   const few = await buildMap(files.slice(0, 4).concat({ path: "name only.png", kind: "image", vectors: [] }), null);
   assert.equal(few.total, 4);
   assert.ok(few.aisles.length >= 1 && few.pieces.length === 4);
+});
+
+test("folder mode preserves exact parent paths, root files, and files without embeddings", () => {
+  const files = ["Root.md", "Trips/Plan.md", "Trips/Europe/Plan.md", "Work/Europe/Plan.md", "Trips/unread.png"]
+    .map(path => ({ path, kind: path.endsWith(".png") ? "image" : "note", vectors: [] }));
+  const map = buildFolderMap(files);
+  assert.equal(map.total, files.length);
+  assert.equal(map.aisles.length, 4);
+  assert.deepEqual(map.membership["folder:"], ["Root.md"]);
+  assert.equal(map.aisles.find(a => a.id === "folder:")?.label, "Vault root files");
+  assert.deepEqual(map.membership["folder:Trips"], ["Trips/Plan.md", "Trips/unread.png"]);
+  assert.deepEqual(map.membership["folder:Trips/Europe"], ["Trips/Europe/Plan.md"]);
+  assert.deepEqual(map.membership["folder:Work/Europe"], ["Work/Europe/Plan.md"]);
+  assert.deepEqual(map, buildFolderMap([...files].reverse()), "stable regardless of indexing order");
+  assert.equal(new Set(map.pieces.map(p => p.path)).size, files.length);
+  for (const p of map.pieces) {
+    const group = map.aisles[p.aisle];
+    assert.ok(map.membership[group.id].includes(p.path));
+    assert.ok(Math.hypot(p.x - group.x, p.y - group.y) < group.radius);
+  }
+  for (const a of map.aisles) for (const b of map.aisles) if (a.index < b.index)
+    assert.ok(Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius, "folder groups do not overlap");
+  assert.deepEqual(buildFolderMap([]), { aisles: [], pieces: [], total: 0, membership: {} });
+});
+
+test("large folder maps retain full counts with bounded representative previews", () => {
+  const files = Array.from({ length: 10000 }, (_, i) => ({ path: `Folder${i % 10}/${i}.md`, kind: "note" }));
+  const map = buildFolderMap(files);
+  assert.equal(map.total, 10000);
+  assert.equal(map.pieces.length, 1200);
+  assert.equal(map.aisles.reduce((n, a) => n + a.count, 0), 10000);
+  assert.equal(Object.values(map.membership).flat().length, 10000);
+  assert.ok(map.pieces.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
 });

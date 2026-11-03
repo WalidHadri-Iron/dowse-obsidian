@@ -1,14 +1,14 @@
 // Settings › Dowse: turning it on for this vault (what that downloads, said first), and once on, where the model runs,
-// how far reading is (pausing it), what's turned off, and the room Dowse takes on this computer (the model can be
+// how far reading is (pausing it), and the room Dowse takes on this computer (the model can be
 // removed: it stays in Obsidian's cache otherwise, even once the plugin is gone).
 
 import { type App, type ButtonComponent, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
-import { isOn, plainExclusions } from "./settings.ts";
 import { kindOf } from "../engine/reading/types.ts";
 import { prefer, preferred, situation } from "./graphics.ts";
 import { sizeText } from "./disk.ts";
 import { heldText, modelTrouble, readingText } from "./status.ts";
+import { runtimeProblem } from "./compat.ts";
 
 const DOWNLOAD = "542 MB";   // the model's text part, fp16 (measurements/README.md)
 const SPEEDUP = "about 8 times";   // an RTX 4070 Ti against the integrated AMD GPU beside it (measurements/README.md)
@@ -48,6 +48,8 @@ export class DowseSettingTab extends PluginSettingTab {
     containerEl.addClass("dowse-settings");
     this.unsubscribe?.();
     this.unsubscribe = null;
+    const problem = runtimeProblem();
+    if (problem) { containerEl.createEl("p", { text: problem, attr: { role: "alert" } }); return; }
     if (!this.plugin.settings.on) return this.offView(containerEl);
     this.onView(containerEl);
     let pending = 0;
@@ -136,6 +138,16 @@ export class DowseSettingTab extends PluginSettingTab {
       }));
 
     new Setting(el).setName("Pictures and sound").setHeading();
+    new Setting(el).setName("Run the model on")
+      .setDesc("Automatic uses WebGPU when it works and falls back to the processor. Choosing the processor also works when a graphics driver is unreliable.")
+      .addDropdown(dropdown => dropdown.addOptions({ auto: "Automatic (GPU preferred)", wasm: "Processor" })
+        .setValue(this.plugin.settings.device ?? "auto").onChange(async value => {
+          this.plugin.settings.device = value === "wasm" ? "wasm" : "auto";
+          this.plugin.engine?.unload();
+          await this.plugin.save();
+          this.plugin.engine?.indexer.resume();
+          this.refreshStatus();
+        }));
     const counts = { image: 0, audio: 0, video: 0, pdf: 0 } as Record<string, number>;
     for (const file of this.app.vault.getFiles()) {
       const kind = kindOf(file.path);
@@ -154,29 +166,6 @@ export class DowseSettingTab extends PluginSettingTab {
         `by name.`)
       .addToggle((toggle) => toggle.setValue(this.plugin.settings.sound)
         .onChange(async (on) => { await this.plugin.setParts({ sound: on }); this.refreshStatus(); }));
-
-    new Setting(el).setName("What's searched").setHeading();
-    el.createEl("p", { cls: "setting-item-description", text: "The whole vault, except what you turn off: " +
-      "right-click a folder or file and choose “Dowse: stop searching”. What's turned off keeps what was " +
-      "read of it, so turning it back on is instant." });
-    const off = this.plugin.settings.off;
-    if (!off.length) el.createEl("p", { cls: "setting-item-description", text: "Nothing is turned off." });
-    for (const path of off) {
-      new Setting(el).setName(path).addButton((button) => button.setButtonText("Search again").onClick(async () => {
-        await this.plugin.setSearched(path, true);
-        this.display();
-      }));
-    }
-    const excluded = plainExclusions((this.app.vault as any).getConfig?.("userIgnoreFilters"))
-      .filter((path) => isOn(this.plugin.settings, path));
-    if (excluded.length) {
-      new Setting(el).setName("Obsidian's excluded files")
-        .setDesc(`Also turn off what Settings › Files and links excludes: ${excluded.join(", ")}.`)
-        .addButton((button) => button.setButtonText("Turn them off").onClick(async () => {
-          for (const path of excluded) await this.plugin.setSearched(path, false);
-          this.display();
-        }));
-    }
 
     new Setting(el).setName("On this computer").setHeading();
     this.indexEl = new Setting(el).setName("This vault's index");

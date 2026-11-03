@@ -25,18 +25,13 @@ test("a folder turned off is searched no more and leaves the map at once; turned
   assert.ok((await found()).includes("Private/Budget ideas.md"));
   assert.equal((await mapped()).length, notes.length);
   off = ["Private"];
-  search.changed();
-  // A searcher is rebuilt at most every REFRESH_MS: waited with a second to spare (a timer counts from the event loop's
-  // clock, which can lag the real one by a busy stretch, here the map's k-means: 100 ms of margin failed 1 run in 8)
-  const rebuilt = () => new Promise((resolve) => setTimeout(resolve, REFRESH_MS + 1000));
-  await rebuilt();
+  search.changed(true);   // a selection change bypasses the ordinary indexing throttle
   assert.ok(!(await found()).some((p) => p.startsWith("Private/")));
   assert.ok(!(await mapped()).some((p) => p.startsWith("Private/")));
   assert.equal((await search.recent()).filter((s) => s.path.startsWith("Private/")).length, 0);
   assert.equal((await store.files()).length, notes.length, "its index is kept");
   off = [];
-  search.changed();
-  await rebuilt();
+  search.changed(true);
   assert.ok((await found()).includes("Private/Budget ideas.md"));
   store.close();
 });

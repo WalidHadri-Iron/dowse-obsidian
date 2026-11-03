@@ -5,10 +5,12 @@
 import { WEB_ONLY } from "./web-only.ts";   // first: a plain web worker, before transformers.js looks at where it is
 import { AutoConfig, AutoModel, AutoProcessor, RawImage, env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-web/webgpu";   // the same runtime transformers.js uses: its settings are these
-import { MODEL_REPO as MODEL, type Answer, type Picture, type Request } from "./protocol.ts";
+import { MODEL_REPO as MODEL, MODEL_REVISION, type Answer, type Picture, type Request } from "./protocol.ts";
 
 let processor: any = null;
 let model: any = null;
+let loaded: Extract<Request, { op: "load" }> | null = null;
+let deviceNow = "wasm";
 
 function send(message: Answer, transfer: Transferable[] = []): void {
   (self as unknown as Worker).postMessage(message, transfer);
@@ -40,19 +42,31 @@ async function load(request: Extract<Request, { op: "load" }>): Promise<{ device
   ort.env.wasm.wasmBinary = request.wasmBinary;
   ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([WEB_ONLY, request.glue], { type: "text/javascript" })) } as any;
   ort.env.webgpu.powerPreference = "high-performance";   // a laptop's graphics card, not its integrated GPU
-  const gpu = request.device !== "wasm" && "gpu" in navigator &&
-    await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" });
+  let gpu: any = null;
+  if (request.device !== "wasm" && "gpu" in navigator) {
+    try { gpu = await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" }); }
+    catch { send({ op: "log", message: "WebGPU is unavailable; using the processor." }); }
+  }
   const device = gpu ? "webgpu" : "wasm";
   ort.env.wasm.numThreads = request.threads ?? (device === "wasm" ? THREADS : 1);
   const progress = (event: any) => {
     if (event.status === "progress") send({ op: "progress", file: event.file, loaded: event.loaded, total: event.total });
   };
-  processor = await AutoProcessor.from_pretrained(MODEL, { progress_callback: progress });
+  const options = { revision: MODEL_REVISION, progress_callback: progress };
+  processor = await AutoProcessor.from_pretrained(MODEL, options);
   // Only the parts asked for are downloaded and loaded (the model card's way: their configs taken out)
-  const config: any = await AutoConfig.from_pretrained(MODEL, { progress_callback: progress });
+  const config: any = await AutoConfig.from_pretrained(MODEL, options);
   if (!request.parts.image) config.vision_config = null;
   if (!request.parts.audio) config.audio_config = null;
-  model = await AutoModel.from_pretrained(MODEL, { config, device, dtype: request.dtype as any, progress_callback: progress });
+  try {
+    model = await AutoModel.from_pretrained(MODEL, { ...options, config, device, dtype: request.dtype as any });
+  } catch (error) {
+    if (device !== "webgpu") throw error;
+    send({ op: "log", message: "The GPU could not start the model; using the processor." });
+    return load({ ...request, device: "wasm" });
+  }
+  deviceNow = device;
+  loaded = request;
   const adapter = device === "webgpu" ? (await (ort.env.webgpu as any).adapter) ?? gpu : null;   // (the runtime's own, or ours)
   const info = adapter?.info;
   return { device, gpu: info ? [info.vendor, info.architecture, info.description].filter(Boolean).join(" ") : null };
@@ -80,16 +94,30 @@ async function image(picture: Picture): Promise<Float32Array> {
   return vectors(null, [[raw]]);
 }
 
-self.onmessage = async (event: MessageEvent<Request>) => {
-  const request = event.data;
+// Processor settings and ONNX sessions are shared: never run two requests through them at once.
+let queue = Promise.resolve();
+self.onmessage = (event: MessageEvent<Request>) => {
+  queue = queue.then(() => handle(event.data));
+};
+
+async function handle(request: Request): Promise<void> {
   try {
     if (request.op === "load") {
       send({ op: "done", id: request.id, result: await load(request) });
     } else if (request.op === "embed") {
-      const result = await embed(request);
+      let result: Float32Array[];
+      try { result = await embed(request); }
+      catch (error) {
+        if (deviceNow !== "webgpu" || !loaded) throw error;
+        send({ op: "log", message: "The GPU stopped computing; retrying on the processor." });
+        await model?.dispose?.().catch(() => {});
+        const where = await load({ ...loaded, device: "wasm" });
+        send({ op: "device", ...where });
+        result = await embed(request);
+      }
       send({ op: "done", id: request.id, result }, result.map((v) => v.buffer));
     }
   } catch (error) {
     send({ op: "failed", id: request.id, message: error instanceof Error ? error.message : String(error) });
   }
-};
+}

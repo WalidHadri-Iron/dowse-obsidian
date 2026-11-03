@@ -8,26 +8,32 @@ export interface Settings {
   sound: boolean;              // recordings and videos' sound read (the model's audio part: 587 MB more)
   graphicsHinted: boolean;     // told once that the model runs on the integrated GPU while a faster card is there
   batteryPause: boolean;       // reading waits while the computer runs on its battery
+  device: "auto" | "wasm";    // automatic GPU selection, or the processor explicitly
 }
 
-export const DEFAULTS: Settings = { on: false, off: [], images: false, sound: false, graphicsHinted: false, batteryPause: false };
+export const DEFAULTS: Settings = { on: false, off: [], images: false, sound: false, graphicsHinted: false, batteryPause: false, device: "auto" };
 
 /** Whether `path` is searched: not under anything turned off (a folder covers what's in it). */
 export function isOn(settings: Settings, path: string): boolean {
   return !settings.off.some((off) => path === off || path.startsWith(off + "/"));
 }
 
-/** Turns `path` off (a folder: and what's in it); what it already covers is folded in. */
+/** A parent suspension preserves explicit choices made for its children. */
 export function turnOff(settings: Settings, path: string): Settings {
-  if (!isOn(settings, path)) return settings;
-  const off = settings.off.filter((p) => !(p === path || p.startsWith(path + "/")));
-  return { ...settings, off: [...off, path].sort() };
+  return settings.off.includes(path) ? settings : { ...settings, off: [...settings.off, path].sort() };
 }
 
 /** Turns `path` back on. Something inside a folder that stays off can't be: its folder covers it (the switch for
  * the folder turns it back on with everything in it). */
 export function turnOn(settings: Settings, path: string): Settings {
-  return { ...settings, off: settings.off.filter((p) => !(p === path || p.startsWith(path + "/"))) };
+  return { ...settings, off: settings.off.filter((p) => p !== path) };
+}
+
+/** Move explicit exclusions with a file/folder; an excluded item stays excluded when moved out of its parent. */
+export function renamed(settings: Settings, from: string, to: string): Settings {
+  const off = settings.off.map((p) => p === from || p.startsWith(from + "/") ? to + p.slice(from.length) : p);
+  const next = { ...settings, off: [...new Set(off)].sort() };
+  return !isOn(settings, from) && isOn(next, to) ? turnOff(next, to) : next;
 }
 
 /** Obsidian's "Excluded files" patterns that are plain folder or file paths (regular expressions are left out). */

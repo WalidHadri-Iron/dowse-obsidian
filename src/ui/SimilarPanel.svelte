@@ -20,9 +20,13 @@
   let strongCount = $state(0);   // how many of `found` are clearly alike (the rest only close)
   let more = $state(false);
   let asked = 0;
+  // svelte-ignore state_referenced_locally
+  let selection = $state(controller.selection());
 
   // The clearly alike, the less likely folded into one row (opened when asked), as the Dowse tab's list
-  const filtered = $derived(unlinkedOnly ? found.filter((item) => !linked.has(item.path)) : found);
+  const filtered = $derived.by(() => { void selection;
+    return found.filter(item => controller.active(item.path) && (!unlinkedOnly || !linked.has(item.path)));
+  });
   const strong = $derived.by(() => {
     const clear = new Set(found.slice(0, strongCount).map((item) => item.path));
     return filtered.filter((item) => clear.has(item.path)).length;
@@ -34,7 +38,9 @@
     path = current();
     if (!controller.on()) { found = []; note = "Turn Dowse on for this vault to see what's like the open file."; return; }
     if (!path) { found = []; note = "Open a note to see what's like it."; return; }
-    const answer = await controller.similar(path);
+    let answer;
+    try { answer = await controller.similar(path); }
+    catch { if (mine === asked) { found = []; note = "The files could not be compared. Try again."; } return; }
     if (mine !== asked) return;
     found = answer.hits.slice(0, 20).map(shownOf);
     strongCount = answer.strong;
@@ -63,10 +69,12 @@
     void refresh();
     let last = "";
     const stop = controller.subscribe(() => {
+      selection = controller.selection();
       const now = `${current()}|${controller.on()}`;
       if (now !== last) { last = now; void refresh(); }
     });
-    return stop;
+    const unfollow = controller.follow(() => void refresh());
+    return () => { stop(); unfollow(); asked++; };
   });
 
   export function update(): void {

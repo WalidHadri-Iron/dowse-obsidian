@@ -5,9 +5,10 @@ import workerSource from "inline:worker";
 import wasmPacked from "inline:ort-wasm";
 import glue from "inline:ort-glue";
 import { XzReadableStream } from "xz-decompress";
+import { Requests } from "./requests.ts";
+import { Cancelled } from "./cancel.ts";
 import type { Answer, Dtype, Parts, Picture, Request } from "./protocol.ts";
 
-type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
 type Ask<T> = T extends unknown ? Omit<T, "id"> : never;
 
 async function unpack(base64: string): Promise<ArrayBuffer> {
@@ -18,43 +19,38 @@ async function unpack(base64: string): Promise<ArrayBuffer> {
 export class Model {
   private worker: Worker;
   private url: string;
-  private next = 1;
-  private pending = new Map<number, Pending>();
+  private requests = new Requests();
+  get closed(): boolean { return this.requests.closed; }
   device: string | null = null;   // where the model runs: "webgpu" or "wasm" (the processor)
   gpu: string | null = null;      // which graphics card, when it's the GPU
   parts: Parts = { image: false, audio: false };   // the parts loaded besides text
 
   private onProgress: (file: string, loaded: number, total: number) => void;
+  private onDevice: (device: string, gpu: string | null) => void;
 
-  constructor(onProgress: (file: string, loaded: number, total: number) => void = () => {}) {
+  constructor(onProgress: (file: string, loaded: number, total: number) => void = () => {},
+              onDevice: (device: string, gpu: string | null) => void = () => {}) {
     this.onProgress = onProgress;
+    this.onDevice = onDevice;
     this.url = URL.createObjectURL(new Blob([workerSource()], { type: "text/javascript" }));
     this.worker = new Worker(this.url, { type: "module" });
+    this.requests.onFailure = () => { this.worker.terminate(); URL.revokeObjectURL(this.url); };
     this.worker.onmessage = (event: MessageEvent<Answer>) => this.answer(event.data);
-    this.worker.onerror = (event) => this.failAll(new Error(event.message || "the model's worker stopped"));
+    this.worker.onerror = (event) => { this.requests.fail(new Cancelled(event.message || "The model's worker stopped")); this.close(); };
+    this.worker.onmessageerror = () => { this.requests.fail(new Cancelled("The model's answer could not be read")); this.close(); };
   }
 
   private answer(message: Answer): void {
-    if (message.op === "progress") return this.onProgress(message.file, message.loaded, message.total);
+    if (message.op === "progress") { this.requests.touch(); return this.onProgress(message.file, message.loaded, message.total); }
+    if (message.op === "device") { this.device = message.device; this.gpu = message.gpu; this.onDevice(message.device, message.gpu); return; }
     if (message.op === "log") return console.log("Dowse's model:", message.message);
-    const pending = this.pending.get(message.id);
-    if (!pending) return;
-    this.pending.delete(message.id);
-    if (message.op === "done") pending.resolve(message.result);
-    else pending.reject(new Error(message.message));
-  }
-
-  private failAll(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error);
-    this.pending.clear();
+    this.requests.answer(message.id, message.op === "done" ? message.result : undefined,
+      message.op === "failed" ? message.message : undefined);
   }
 
   private ask<T>(request: Ask<Request>, transfer: Transferable[] = []): Promise<T> {
-    const id = this.next++;
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ ...request, id }, transfer);
-    });
+    return this.requests.ask<T>((id) => this.worker.postMessage({ ...request, id }, transfer),
+      request.op === "load" ? 30 * 60_000 : 5 * 60_000);
   }
 
   /** Loads the model (downloaded the first time); answers where it runs: "webgpu" or "wasm" (the processor). */
@@ -82,8 +78,6 @@ export class Model {
   }
 
   close(): void {
-    this.failAll(new Error("the model was closed"));
-    this.worker.terminate();
-    URL.revokeObjectURL(this.url);
+    this.requests.fail();
   }
 }

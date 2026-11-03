@@ -9,7 +9,11 @@
     "dev": "node esbuild.config.mjs",
     "check": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --threshold warning",
     "measure": "node scripts/measure-model.mjs",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "smoke": "node scripts/smoke.mjs",
+    "test:native-model": "node scripts/native-model.mjs",
+    "test:vault": "node scripts/vault-stress.mjs",
+    "test:media": "node scripts/media-accuracy.mjs"
   },
   "license": "MIT",
   "devDependencies": {
@@ -20,6 +24,7 @@
     "esbuild-svelte": "0.9.5",
     "fake-indexeddb": "6.2.5",
     "obsidian": "1.14.4",
+    "puppeteer-core": "25.16.0",
     "svelte-check": "4.7.6",
     "typescript": "5.9.3"
   },

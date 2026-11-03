@@ -44,12 +44,17 @@ const worker = await esbuild.build({
   write: false,
   logLevel: "warning",
 });
+const searchWorker = await esbuild.build({
+  entryPoints: ["src/engine/search/worker.ts"], bundle: true, format: "esm", platform: "browser", target: "es2022",
+  minify: production, write: false, logLevel: "warning",
+});
 
 const inlined = {
   name: "inlined",
   setup(build) {
     const sources = {
       "inline:worker": worker.outputFiles[0].text,
+      "inline:search-worker": searchWorker.outputFiles[0].text,
       "inline:ort-wasm": wasm,
       "inline:ort-glue": glue,
     };

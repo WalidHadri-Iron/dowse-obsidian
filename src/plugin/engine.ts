@@ -5,14 +5,18 @@ import type { App } from "obsidian";
 import { Indexer, type Status } from "../engine/indexer.ts";
 import { Model } from "../engine/model.ts";
 import type { Dtype, Parts } from "../engine/protocol.ts";
+import { MODEL_REVISION } from "../engine/protocol.ts";
+import { Cancelled } from "../engine/cancel.ts";
+import { kindOf } from "../engine/reading/types.ts";
 import { Store } from "../engine/store.ts";
 import { VaultSearch } from "./search.ts";
+import { SearchWorker } from "./search-worker.ts";
 import { isOn, type Settings } from "./settings.ts";
 import { VaultSource } from "./source.ts";
 import { modelSizes } from "./disk.ts";
 
 export const DTYPE: Dtype = "fp16";   // the one build on both the GPU and the processor (measurements/README.md)
-export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/1`;
+export const MODEL_TAG = `embeddinggemma-2/${DTYPE}/${MODEL_REVISION}/1`;
 const IDLE_MS = 10 * 60 * 1000;
 
 /** What reading waits for: you typing, or reading paused (and why). */
@@ -57,6 +61,10 @@ export class Engine {
   private listeners = new Set<() => void>();
   private downloads = new Map<string, [number, number]>();
   private settings: () => Settings;
+  private closed = false;
+  private epoch = 0;
+  private startTask: Promise<void> | null = null;
+  private closing: Promise<void> | null = null;
   /** Measured by the engine when reading settles, never asked for by Settings: Settings' window froze Obsidian's
    * renderer every time it showed what it had itself just read from IndexedDB or the cache (Obsidian 1.14.5, 2026-10-29;
    * shown through `onChange`, as the status is, it doesn't). */
@@ -67,26 +75,43 @@ export class Engine {
     this.store = store;
     this.settings = settings;
     this.indexer = new Indexer(store, new VaultSource(app), {
-      active: (path) => isOn(settings(), path),
+      active: (path) => !this.closed && !!kindOf(path) && isOn(settings(), path) && !!app.vault.getFileByPath(path),
       parts: () => this.parts(),
       embed: async () => {
         const model = await this.use();
-        return { texts: (p) => model.texts(p), images: (p) => model.images(p), audio: (c) => model.audio(c) };
+        const read = async <T>(run: () => Promise<T>): Promise<T> => {
+          try { return await run(); }
+          catch (error) {
+            if (model === this.loaded) this.unload();
+            throw new Cancelled(error instanceof Error ? error.message : String(error));
+          }
+        };
+        return { texts: (p) => read(() => model.texts(p)), images: (p) => read(() => model.images(p)), audio: (c) => read(() => model.audio(c)) };
       },
       gpu: () => this.model.device !== "wasm",
       busy: you.busy,
       held: you.held,
       onStatus: (status) => {
-        if (status.state === "idle" && this.wasReading) void this.measure();
+        if (!this.closed && status.state === "idle" && this.wasReading) {
+          this.search.changed(true);
+          void this.measure().catch(console.error);
+        }
         this.wasReading = status.state !== "idle";
         this.changed();
       },
       onSaved: () => { this.search.changed(); this.changed(); },
     });
     this.search = new VaultSearch(store, {
-      ready: () => { if (this.loaded) this.lastUsed = Date.now(); return this.loaded; },
+      ready: () => {
+        if (this.loaded?.closed) this.unload();
+        if (this.loaded) {
+          this.lastUsed = Date.now();
+          if (this.model.device !== this.loaded.device) this.setModel({ state: "ready", device: this.loaded.device ?? undefined, gpu: this.loaded.gpu });
+        }
+        return this.loaded;
+      },
       wake: () => void this.use().catch(() => {}),
-    }, (path) => isOn(settings(), path));
+    }, (path) => !this.closed && !!kindOf(path) && isOn(settings(), path) && !!app.vault.getFileByPath(path), new SearchWorker(store.name));
     this.timer = window.setInterval(() => this.sleepIfIdle(), 60 * 1000);
   }
 
@@ -146,38 +171,42 @@ export class Engine {
 
   /** The model, loaded (downloaded the first time) if it isn't, with the parts that are on. */
   async use(): Promise<Model> {
+    if (this.closed) throw new Cancelled();
     this.lastUsed = Date.now();
     const parts = this.parts();
-    if (this.loaded && ((parts.image && !this.loaded.parts.image) || (parts.audio && !this.loaded.parts.audio))) {
-      this.loaded.close();   // a part was turned on: loaded again with it
-      this.loaded = null;
-    }
+    if (this.loaded?.closed || (this.loaded && ((parts.image && !this.loaded.parts.image) || (parts.audio && !this.loaded.parts.audio)))) this.unload();
     if (this.loaded) return this.loaded;
-    this.loading ??= this.load();
+    const loading = this.loading ??= this.load();
     try {
-      return await this.loading;
+      const model = await loading;
+      const wanted = this.parts();
+      if ((wanted.image && !model.parts.image) || (wanted.audio && !model.parts.audio)) return this.use();
+      return model;
     } finally {
-      this.loading = null;
+      if (this.loading === loading) this.loading = null;
     }
   }
 
   private async load(): Promise<Model> {
+    const epoch = this.epoch;
     this.downloads.clear();
     this.setModel({ state: "loading" });
     const model = this.starting = new Model((file, loaded, total) => {
+      if (epoch !== this.epoch || this.closed) return;
       this.downloads.set(file, [loaded, total]);
       const [got, all] = [...this.downloads.values()].reduce(([a, b], [c, d]) => [a + c, b + d], [0, 0]);
       if (all > 0 && got < all) this.setModel({ state: "downloading", progress: got / all });
-    });
+    }, (device, gpu) => { if (epoch === this.epoch && !this.closed) this.setModel({ state: "ready", device, gpu }); });
     try {
-      const device = await model.load(DTYPE, "auto", this.parts());
+      const device = await model.load(DTYPE, this.settings().device ?? "auto", this.parts());
+      if (epoch !== this.epoch || this.closed) { model.close(); throw new Cancelled(); }
       this.loaded = model;
       this.setModel({ state: "ready", device, gpu: model.gpu });
       return model;
     } catch (error) {
       model.close();
-      const letGo = this.starting !== model;   // (let go while it loaded: not a failure)
-      this.setModel(letGo ? { state: "asleep" } : { state: "failed", error: error instanceof Error ? error.message : String(error) });
+      if (epoch === this.epoch && !this.closed)
+        this.setModel({ state: "failed", error: error instanceof Error ? error.message : String(error) });
       throw error;
     } finally {
       if (this.starting === model) this.starting = null;
@@ -186,6 +215,8 @@ export class Engine {
 
   /** The model let go now, a model still loading (downloading) too: it's loaded again when needed. */
   unload(): void {
+    this.epoch++;
+    this.loading = null;
     const starting = this.starting;
     this.starting = null;
     starting?.close();
@@ -204,19 +235,30 @@ export class Engine {
   }
 
   start(): void {
-    void this.indexer.sync().then(() => this.indexer.run());
+    if (this.closed || this.startTask) return;
+    this.startTask = (async () => { await this.indexer.sync(); if (!this.closed) await this.indexer.run(); })();
+    void this.startTask.catch((error) => { if (!this.closed) { console.error("Dowse reading stopped", error); this.setModel({ state: "failed", error: String(error) }); } });
   }
 
   stop(): void {
     this.indexer.stop();
   }
 
-  close(): void {
+  close(forget = false): Promise<void> {
+    if (this.closing) return this.closing;
+    this.closed = true;
     window.clearInterval(this.timer);
     this.indexer.stop();
     this.unload();
-    this.search.close();
-    this.store.close();
     this.listeners.clear();
+    this.closing = (async () => {
+      await this.startTask?.catch(() => {});
+      await this.indexer.join();
+      this.search.close();
+      await this.measuring?.catch(() => {});
+      if (forget) await this.store.clear();
+      this.store.close();
+    })();
+    return this.closing;
   }
 }

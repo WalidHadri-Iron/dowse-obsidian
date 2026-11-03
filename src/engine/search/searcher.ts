@@ -15,6 +15,7 @@ import { inflects, normalized, snippet, terms as termsOf, words as wordSpans } f
 import { parse as parseDate, type Span } from "./dates.ts";
 import { Keywords, pattern, token, type Pattern } from "./keywords.ts";
 import { sidak, tAsZ } from "./stats.ts";
+import { isScreenshot } from "../reading/media.ts";
 
 export const DIM = 768;
 export const SMALL = 200;          // under this many vectors, the scale itself is uncertain (`apart`)
@@ -284,6 +285,7 @@ export class Searcher {
   }
 
   private under(folder: string): Set<number> {
+    if (folder === "/") return new Set([...this.files.values()].filter(f => !f.path.includes("/")).map(f => f.id));
     const key = folder.replace(/\/+$/, "").toLowerCase() + "/";
     let found = this.scopes.get(key);
     if (!found) {
@@ -317,7 +319,8 @@ export class Searcher {
     }
     const allowed = (id: number) => {
       const file = this.files.get(id);
-      return Boolean(file) && (!kinds || kinds.has(file!.kind)) && (!scope || scope.has(id)) &&
+      return Boolean(file) && (!kinds || kinds.has(file!.kind) ||
+        (kinds.has("screenshot") && file!.kind === "image" && isScreenshot(file!.path))) && (!scope || scope.has(id)) &&
         (!span || (span.start <= this.time(file!) && this.time(file!) < span.end));
     };
 

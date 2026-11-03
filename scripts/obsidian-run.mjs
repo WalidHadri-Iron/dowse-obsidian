@@ -1,6 +1,6 @@
 // Runs Obsidian (the one installed) with a profile and a vault of its own, never the user's, with the plugin in it:
 // answers "trust this vault's plugins", waits for a file the plugin writes, keeps the console, takes screenshots, and
-// closes Obsidian. For development on a Windows PC (a portable Node with puppeteer-core); CI uses wdio-obsidian-service.
+// closes Obsidian. For development on a Windows PC (a portable Node with puppeteer-core); CI uses scripts/smoke.mjs.
 //
 //   node obsidian-run.mjs --obsidian <Obsidian.exe> --profile <dir> --vault <dir> --wait <file in the vault>
 //       [--timeout 600] [--shots <dir>] [--port 9333] [--every 60] [--eval <script>] [--drag <selector>] [--detach 1]

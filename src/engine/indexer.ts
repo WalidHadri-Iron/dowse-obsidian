@@ -18,6 +18,7 @@ import { readPdfStep, type PdfLike } from "./reading/pdf.ts";
 import { kindOf, modalityOf, NEEDS, READERS, type Kind, type Piece } from "./reading/types.ts";
 import type { Parts, Picture } from "./protocol.ts";
 import { toHalf, type FileRow, type SegmentRow, type Store } from "./store.ts";
+import { Cancelled } from "./cancel.ts";
 
 export interface VaultFile { path: string; mtime: number; size: number }
 
@@ -31,11 +32,11 @@ export interface Source {
   /** An image sized for `budget` (or one tall/wide enough to hold a token), or null: too small or unreadable. */
   picture(path: string, budget: number, minSide: number): Promise<Picture | null>;
   /** A PDF page drawn and sized for `budget`. */
-  page(pdf: Pdf, number: number, budget: number): Promise<Picture | null>;
+  page(pdf: Pdf, number: number, budget: number, signal?: AbortSignal): Promise<Picture | null>;
   /** A recording's (or a video's) sound, mono 16 kHz, or null: none, or too large to decode at once. */
-  sound(path: string): Promise<Float32Array | null>;
+  sound(path: string, signal?: AbortSignal): Promise<Float32Array | null>;
   /** A video's length in seconds, and its frames at `times`, each sized for `budget` with its 8×8 grey levels. */
-  video(path: string): Promise<{ duration: number; frames(times: number[], budget: number):
+  video(path: string, signal?: AbortSignal): Promise<{ duration: number; frames(times: number[], budget: number):
     Promise<{ time: number; picture: Picture; grey: number[] }[]>; close(): void } | null>;
 }
 
@@ -81,6 +82,9 @@ export class Indexer {
   private wake: (() => void) | null = null;
   private settledWaiters: (() => void)[] = [];
   private running = false;
+  private task: Promise<void> | null = null;
+  private version = 0;
+  private abort = new AbortController();
   private stopped = false;
   private waited = 0;   // ms of the file being read spent waiting (for you, for the model): not reading
   private speed = new Map<Kind, { seconds: number; bytes: number; files: number }>();
@@ -121,8 +125,9 @@ export class Indexer {
       present.add(file.path);
       const kind = this.readable(file.path);
       const row = rows.get(file.path);
+      if (row && !kindOf(file.path)) { await this.store.remove(file.path); continue; }
       if (!kind) continue;
-      const stale = !row || row.mtime !== file.mtime || row.size !== file.size || row.reader < READERS[kind];
+      const stale = !row || row.kind !== kind || row.mtime !== file.mtime || row.size !== file.size || row.reader < READERS[kind];
       if (stale) await this.store.putFile(this.pending(file, kind, row));
       else if (row.state === "done" && this.nowReadable(row)) await this.store.putFile({ ...row, state: "pending", next: null });
     }
@@ -157,15 +162,13 @@ export class Indexer {
   }
 
   async removed(path: string): Promise<void> {
-    for (const row of await this.store.files()) {
-      if (row.path === path || row.path.startsWith(path + "/")) await this.store.remove(row.path);
-    }
+    await this.store.removeTree(path);
     this.options.onSaved?.(path);
   }
 
   /** Renamed or moved (a folder: everything in it): the same rows and vectors under the new paths. */
   async renamed(from: string, to: string): Promise<void> {
-    for (const row of await this.store.files()) {
+    for (const row of await this.store.filesWithin(from)) {
       if (row.path === from) await this.store.rename(from, to);
       else if (row.path.startsWith(from + "/")) await this.store.rename(row.path, to + row.path.slice(from.length));
     }
@@ -173,23 +176,31 @@ export class Indexer {
   }
 
   private poke(): void {
+    this.version++;
     this.wake?.();
   }
 
   /** Reads what waits, until `stop`; sleeps when nothing does, and wakes when something comes. */
-  async run(): Promise<void> {
-    if (this.running) return;
+  run(): Promise<void> {
+    if (this.task) return this.task;
+    this.task = this.loop().finally(() => { this.task = null; });
+    return this.task;
+  }
+
+  private async loop(): Promise<void> {
     this.running = true;
     this.stopped = false;
+    this.abort = new AbortController();
     try {
       while (!this.stopped) {
+        const version = this.version;
         const waiting = await this.waiting();
+        if (this.stopped) break;
         const next = waiting[0];
         if (!next) {
           this.report({ state: "idle", current: undefined, held: undefined, left: null });
           for (const settled of this.settledWaiters.splice(0)) settled();
-          await new Promise<void>((resolve) => (this.wake = resolve));
-          this.wake = null;
+          await this.sleep(undefined, version);
           continue;
         }
         this.report({ state: "reading", current: next.path, left: this.estimate(waiting), held: undefined });
@@ -200,6 +211,8 @@ export class Indexer {
         try {
           await this.read(next);
         } catch (error) {
+          if (this.stopped) break;
+          if (error instanceof Cancelled) { await this.sleep(50); continue; }
           if (!(error instanceof ModelMissing)) throw error;
           this.report({ state: "paused", held: "the model couldn't start" });   // tried again later, or when asked
           await this.sleep(RETRY_MS);
@@ -211,6 +224,7 @@ export class Indexer {
     } finally {
       this.running = false;
       this.report({ state: "stopped", current: undefined });
+      for (const settled of this.settledWaiters.splice(0)) settled();
     }
   }
 
@@ -224,8 +238,11 @@ export class Indexer {
 
   stop(): void {
     this.stopped = true;
+    this.abort.abort();
     this.poke();
   }
+
+  async join(): Promise<void> { await this.task; }
 
   /** Waits while reading is paused, or while you're typing. */
   private async pause(): Promise<void> {
@@ -242,9 +259,13 @@ export class Indexer {
   }
 
   /** Waits `ms`, or until poked. */
-  private async sleep(ms: number): Promise<void> {
+  private async sleep(ms?: number, version = this.version): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await new Promise<void>((resolve) => { this.wake = resolve; timer = setTimeout(resolve, ms); });
+    await new Promise<void>((resolve) => {
+      if (this.stopped || version !== this.version) { resolve(); return; }
+      this.wake = resolve;
+      if (ms !== undefined) timer = setTimeout(resolve, ms);
+    });
     clearTimeout(timer);
     this.wake = null;
   }
@@ -293,7 +314,7 @@ export class Indexer {
       else if (row.kind === "video") await this.readVideo(row);
       else await this.readText(row);
     } catch (error) {
-      if (error instanceof ModelMissing) throw error;   // not the file's fault: it waits
+      if (this.stopped || error instanceof Cancelled || error instanceof ModelMissing) throw error;
       const latest = await this.store.file(row.path);
       if (latest && latest.mtime === row.mtime) {
         await this.store.putFile({ ...latest, state: "failed", detail: error instanceof Error ? error.message : String(error) });
@@ -328,13 +349,18 @@ export class Indexer {
       const adding = (row.info.waitingFor as string[] | undefined)?.includes("image") && row.next === null &&
         this.options.parts().image && Array.isArray(row.info.pictures);
       if (adding) {
-        const pieces: Piece[] = [];
-        for (const number of row.info.pictures as number[]) {
-          const picture = await this.source.page(pdf, number, media.page);
-          if (picture) pieces.push({ kind: "page", text: null, picture, body: "", loc: number });
+        const pages = row.info.pictures as number[];
+        for (let i = Number(row.info.pictureNext ?? 0); i < pages.length && !this.stopped; i++) {
+          await this.pause();
+          if (this.stopped) return;
+          const number = pages[i];
+          const picture = await this.source.page(pdf, number, media.page, this.abort.signal);
+          const segments = await this.embed(picture ? [{ kind: "page", text: null, picture, body: "", loc: number }] : []);
+          if (!segments) return;
+          const last = i + 1 === pages.length;
+          if (!(await this.save(row, segments, { ...row.info, pictureNext: last ? undefined : i + 1,
+            waitingFor: last ? undefined : ["image"] }, null, false))) return;
         }
-        const segments = await this.embed(pieces);
-        if (segments) await this.save(row, segments, { ...row.info, waitingFor: undefined }, null, false);
         return;
       }
       let start: number | null = row.next ?? 0;
@@ -345,7 +371,9 @@ export class Indexer {
         const pictures = [...((info as { pictures?: number[] }).pictures ?? []), ...((step.info.pictures as number[]) ?? [])];
         if (this.options.parts().image) {   // the step's scanned pages, as pictures (their few words stay for keywords)
           for (const number of (step.info.pictures as number[]) ?? []) {
-            const picture = await this.source.page(pdf, number, media.page);
+            await this.pause();
+            if (this.stopped) return;
+            const picture = await this.source.page(pdf, number, media.page, this.abort.signal);
             if (picture) step.pieces.push({ kind: "page", text: null, picture, body: "", loc: number });
           }
         }
@@ -385,9 +413,9 @@ export class Indexer {
     const missing = this.missing("audio");
     if (missing.length) return this.byName(row, missing);
     const media = this.media();
-    const samples = await this.source.sound(row.path);
+    const samples = await this.source.sound(row.path, this.abort.signal);
     if (!samples) {
-      await this.save(row, [], { note: "no sound Dowse can read: searched by name" }, null, true);
+      await this.save(row, [], { note: "sound unreadable or over the browser's safety limits (32 MB / 20 min / 128 MB decoded): searched by name" }, null, true);
       return;
     }
     const duration = samples.length / 16000;
@@ -408,13 +436,13 @@ export class Indexer {
     const parts = this.options.parts();
     if (!parts.image && !parts.audio) return this.byName(row, ["image", "audio"]);
     const media = this.media();
-    const video = await this.source.video(row.path);
+    const video = await this.source.video(row.path, this.abort.signal);
     if (!video) {
       await this.save(row, [], { note: "a video Dowse can't play: searched by name" }, null, true);
       return;
     }
     try {
-      const samples = parts.audio ? await this.source.sound(row.path) : null;
+      const samples = parts.audio ? await this.source.sound(row.path, this.abort.signal) : null;
       const duration = video.duration;
       let start = row.next ?? 0;
       let lastHash: bigint | null = start && typeof row.info.frameHash === "string" ? BigInt(row.info.frameHash) : null;
@@ -450,18 +478,19 @@ export class Indexer {
   /** The pieces' vectors, a piece at a time (a GPU reads no faster in batches; one at a time lets you go first). */
   private async embed(pieces: Piece[]): Promise<SegmentRow[] | null> {
     const out: SegmentRow[] = [];
-    let model: Embedder | null = null;
     for (const piece of pieces) {
       await this.pause();
       if (this.stopped) return null;
       let vector: ArrayBuffer | null = null;
       const modality = modalityOf(piece);
       if (modality !== "none") {
-        if (!model) {
+        let model: Embedder;
+        {
           const asked = performance.now();   // (loading the model isn't reading this file)
           try {
             model = await this.options.embed();
           } catch (error) {
+            if (error instanceof Cancelled) throw error;
             throw new ModelMissing(error instanceof Error ? error.message : String(error));
           } finally {
             this.waited += performance.now() - asked;
@@ -484,7 +513,7 @@ export class Indexer {
     const kept = Object.fromEntries(Object.entries(info).filter(([, value]) => value !== undefined));
     const saved: FileRow = { ...row, info: kept, next, state: next === null ? "done" : "pending", reader: READERS[row.kind] };
     delete saved.detail;
-    await this.store.saveStep(saved, segments, restart);
+    if (!(await this.store.saveStep(saved, segments, restart, row))) return false;
     Object.assign(row, saved);
     this.options.onSaved?.(row.path);
     return true;

@@ -5,13 +5,17 @@
 
 import { type App, loadPdfJs } from "obsidian";
 import type { Piece } from "../ui/wall/piece.ts";
-import { drawPage } from "./page.ts";
+import { drawPage, PAGE } from "./page.ts";
+import { mediaEvent } from "./media-limits.ts";
+import { drawExcalidraw, excalidrawRenderer, isExcalidraw } from "./excalidraw.ts";
 
 const KEEP = 200;
 
 export class Pictures {
   private app: App;
   private made = new Map<string, Promise<string | null>>();   // key → blob URL (oldest first)
+  private abort = new AbortController();
+  private drawings = Promise.resolve();   // rendering several big drawings simultaneously can stall Obsidian
 
   constructor(app: App) {
     this.app = app;
@@ -21,6 +25,41 @@ export class Pictures {
     const file = this.app.vault.getFileByPath(piece.path);
     if (!file) return Promise.resolve(null);
     if (piece.kind === "image") return Promise.resolve(this.app.vault.getResourcePath(file));
+    if (piece.kind === "note" && isExcalidraw(this.app, file)) {
+      const dark = document.body.hasClass("theme-dark");
+      const key = `${piece.path}|drawing@${pixels}|${dark}|${file.stat.mtime}|${file.stat.size}|${excalidrawRenderer(this.app)}`;
+      let made = this.made.get(key);
+      if (!made) {
+        const signal = this.abort.signal;
+        made = this.drawings.then(async () => {
+          const url = await drawExcalidraw(this.app, file, pixels, dark, signal);
+          if (!url) return null;
+          // Drawing thumbnails must contain the whole diagram. Ordinary photos may be cropped by the wall/floor.
+          let image: ImageBitmap | null = null;
+          try {
+            image = await createImageBitmap(await (await fetch(url, { signal })).blob());
+            if (signal.aborted) return null;
+            const width = Math.round(Math.max(96, Math.min(pixels, 4096))), height = Math.round(width * PAGE.height / PAGE.width);
+            const canvas = new OffscreenCanvas(width, height), g = canvas.getContext("2d")!;
+            g.drawImage(image, 0, 0, 1, 1, 0, 0, 1, 1);
+            const [r, green, b, a] = g.getImageData(0, 0, 1, 1).data;
+            g.fillStyle = a ? `rgb(${r}, ${green}, ${b})` : dark ? "#1e1e1e" : "#ffffff";
+            g.fillRect(0, 0, width, height);
+            const scale = Math.min(width / image.width, height / image.height);
+            g.drawImage(image, (width - image.width * scale) / 2, (height - image.height * scale) / 2,
+              image.width * scale, image.height * scale);
+            const png = await canvas.convertToBlob({ type: "image/png" });
+            return signal.aborted ? null : URL.createObjectURL(png);
+          } finally { image?.close(); URL.revokeObjectURL(url); }
+        }).catch(() => null);
+        this.drawings = made.then(() => {});
+        this.made.set(key, made);
+        const request = made;
+        void made.then(url => { if (!url && this.made.get(key) === request) this.made.delete(key); });
+        this.trim();
+      }
+      return made;
+    }
     if (piece.kind === "note" || piece.kind === "canvas") {
       const dark = document.body.hasClass("theme-dark");   // (a page in the theme's colours: another theme, another page)
       const from = piece.kind === "note" ? piece.loc ?? 0 : 0;
@@ -34,7 +73,7 @@ export class Pictures {
       return made;
     }
     if (piece.kind !== "pdf" && piece.kind !== "video") return Promise.resolve(null);
-    const key = `${piece.path}#${piece.loc ?? (piece.kind === "pdf" ? 1 : 0)}@${pixels}`;
+    const key = `${piece.path}#${piece.loc ?? (piece.kind === "pdf" ? 1 : 0)}@${pixels}|${file.stat.mtime}|${file.stat.size}`;
     let made = this.made.get(key);
     if (!made) {
       made = (piece.kind === "pdf" ? this.page(piece.path, piece.loc ?? 1, pixels) : this.still(piece.path, piece.loc ?? 0, pixels))
@@ -53,7 +92,7 @@ export class Pictures {
     try {
       const page = await document.getPage(Math.min(Math.max(number, 1), document.numPages));
       const base = page.getViewport({ scale: 1 });
-      const viewport = page.getViewport({ scale: pixels / base.width });
+      const viewport = page.getViewport({ scale: Math.min(pixels / base.width, 4096 / base.height) });
       const canvas = new OffscreenCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
       const context = canvas.getContext("2d")!;
       context.fillStyle = "#fff";
@@ -72,20 +111,19 @@ export class Pictures {
     const video = document.createElement("video");
     video.muted = true;
     video.preload = "auto";
-    video.src = this.app.vault.getResourcePath(file);
+    const signal = this.abort.signal;
     try {
-      await new Promise<void>((resolve, reject) => {
-        video.onloadedmetadata = () => resolve();
-        video.onerror = () => reject(new Error("unreadable"));
-      });
-      await new Promise<void>((resolve, reject) => {
-        video.onseeked = () => resolve();
-        video.onerror = () => reject(new Error("unreadable"));
+      const metadata = mediaEvent(video, "loadedmetadata", signal);
+      video.src = this.app.vault.getResourcePath(file);
+      await metadata;
+      if (!video.videoWidth || !Number.isFinite(video.duration)) return null;
+      const seeked = mediaEvent(video, "seeked", signal);
         video.currentTime = Math.min(Math.max(time, 1), Math.max(video.duration - 0.1, 0));
-      });
-      const height = Math.round(pixels * video.videoHeight / video.videoWidth);
-      const canvas = new OffscreenCanvas(pixels, height);
-      canvas.getContext("2d")!.drawImage(video, 0, 0, pixels, height);
+      await seeked;
+      const scale = Math.min(pixels / video.videoWidth, 4096 / video.videoHeight);
+      const width = Math.max(1, Math.round(video.videoWidth * scale)), height = Math.max(1, Math.round(video.videoHeight * scale));
+      const canvas = new OffscreenCanvas(width, height);
+      canvas.getContext("2d")!.drawImage(video, 0, 0, width, height);
       return URL.createObjectURL(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
     } finally {
       video.removeAttribute("src");
@@ -102,6 +140,7 @@ export class Pictures {
   }
 
   clear(): void {
+    this.abort.abort(); this.abort = new AbortController();
     for (const made of this.made.values()) void made.then((url) => url && URL.revokeObjectURL(url));
     this.made.clear();
   }

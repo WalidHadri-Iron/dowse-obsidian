@@ -44,6 +44,7 @@ export const TARGET = 1200;   // files shown on the map at most: beyond, each ai
 export const COHESION = 0.1;  // how much like the rest of its group a file must be to stay in it
 export const TRIES = 8;       // k-means runs, the best kept
 export const REST = "Everything else";
+export type ExploreGrouping = "content" | "folder";
 
 export interface MapFile {
   path: string;
@@ -58,7 +59,7 @@ export interface Aisle {
   x: number;
   y: number;
   radius: number;
-  id: string;      // "auto-<n>", or "rest"
+  id: string;      // "auto-<n>", "rest", or "folder:<vault path>"
   about: string;   // the words that describe it best
 }
 
@@ -354,6 +355,46 @@ export async function buildMap(all: MapFile[], rawWords: Float32Array[] | null):
   const n = files.length;
   const k = n >= 6 ? Math.min(Math.max(Math.round(Math.sqrt(n)), 1), 18) : 1;   // (Dowse: √(n/3); see above)
   return arrange(files, vectors, await grouped(vectors, k), k, rawWords);
+}
+
+/** Exact parent folders, including files with no content vectors. Full paths distinguish nested folders with the
+ * same name. A grid avoids both semantic claims about folder positions and a quadratic layout for many folders. */
+export function buildFolderMap(all: Pick<MapFile, "path" | "kind">[]): ExploreMap {
+  const folders = new Map<string, typeof all>();
+  for (const file of all) {
+    const folder = file.path.slice(0, Math.max(0, file.path.lastIndexOf("/")));
+    if (!folders.has(folder)) folders.set(folder, []);
+    folders.get(folder)!.push(file);
+  }
+  const groups = [...folders].sort(([a], [b]) => a.localeCompare(b));
+  const aisles: Aisle[] = [], pieces: MapPiece[] = [], membership: ExploreMap["membership"] = {};
+  const columns = Math.ceil(Math.sqrt(groups.length));
+  let bottom = 0;
+  for (let start = 0; start < groups.length; start += columns) {
+    const row = groups.slice(start, start + columns).map(([folder, files]) => {
+      files.sort((a, b) => a.path.localeCompare(b.path));
+      const shown = Math.min(files.length, Math.max(4, Math.round(files.length * Math.min(1, TARGET / all.length))));
+      return { folder, files, shown, radius: Math.sqrt(shown) * 0.78 + 0.6 };
+    });
+    const height = Math.max(...row.map(g => g.radius));
+    const width = row.reduce((sum, g) => sum + 2 * g.radius + 1.2, -1.2);
+    let left = -width / 2;
+    for (const { folder, files, shown, radius } of row) {
+      const index = aisles.length, x = left + radius, y = bottom + height, id = `folder:${folder}`;
+      aisles.push({ index, id, label: folder || "Vault root files", count: files.length, x, y, radius,
+        about: folder ? `Files directly in ${folder}` : "Files at the root of this vault" });
+      membership[id] = files.map(f => f.path);
+      files.slice(0, shown).forEach((file, i) => {
+        const angle = i * 2.39996, r = Math.sqrt(i + 0.5) * 0.78;
+        pieces.push({ path: file.path, kind: file.kind, aisle: index, x: x + r * Math.cos(angle), y: y + r * Math.sin(angle) });
+      });
+      left += 2 * radius + 1.2;
+    }
+    bottom += 2 * height + 1.2;
+  }
+  const middle = Math.max(0, bottom - 1.2) / 2;
+  for (const item of [...aisles, ...pieces]) item.y -= middle;
+  return { aisles, pieces, total: all.length, membership };
 }
 
 /** The map, once the files are grouped (`labels`, of `k` groups): what isn't like its group set apart, each aisle

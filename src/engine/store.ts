@@ -63,6 +63,12 @@ export class Store {
   }
 
   /** The vault's index (`name`: one per vault), cleared if it holds another model's vectors than `model`'s. */
+  static async attach(name: string, factory: IDBFactory = indexedDB): Promise<Store> {
+    const db = await done(factory.open(name, VERSION));
+    if (!db.objectStoreNames.contains("segments")) { db.close(); throw new Error("The vault's index is not ready"); }
+    return new Store(db, name);
+  }
+
   static async open(name: string, model: string, factory: IDBFactory = indexedDB): Promise<Store> {
     const request = factory.open(name, VERSION);
     request.onupgradeneeded = () => {
@@ -98,6 +104,13 @@ export class Store {
     return done(this.db.transaction("files").objectStore("files").get(path));
   }
 
+  async filesWithin(path: string): Promise<FileRow[]> {
+    const files = this.db.transaction("files").objectStore("files");
+    const [own, children] = await Promise.all([done(files.get(path)),
+      done(files.getAll(IDBKeyRange.bound(path + "/", path + "/\uffff")))]);
+    return own ? [own, ...children] : children;
+  }
+
   segments(): Promise<SegmentRow[]> {
     return done(this.db.transaction("segments").objectStore("segments").getAll());
   }
@@ -113,8 +126,12 @@ export class Store {
   }
 
   /** One step of a file, saved at once: its row and its new segments (`restart`: its old ones dropped first). */
-  async saveStep(row: FileRow, segments: SegmentRow[], restart: boolean): Promise<void> {
+  async saveStep(row: FileRow, segments: SegmentRow[], restart: boolean, expected?: { mtime: number; size: number }): Promise<boolean> {
     const tx = this.db.transaction(["files", "segments"], "readwrite");
+    if (expected) {
+      const latest = await done(tx.objectStore("files").get(row.path)) as FileRow | undefined;
+      if (!latest || latest.mtime !== expected.mtime || latest.size !== expected.size) { await finished(tx); return false; }
+    }
     const store = tx.objectStore("segments");
     if (restart) {
       const keys = await done(store.index("path").getAllKeys(row.path));
@@ -123,6 +140,7 @@ export class Store {
     for (const segment of segments) store.add({ ...segment, path: row.path });
     tx.objectStore("files").put(row);
     await finished(tx);
+    return true;
   }
 
   async remove(path: string): Promise<void> {
@@ -130,6 +148,19 @@ export class Store {
     const store = tx.objectStore("segments");
     for (const key of await done(store.index("path").getAllKeys(path))) store.delete(key);
     tx.objectStore("files").delete(path);
+    await finished(tx);
+  }
+
+  async removeTree(path: string): Promise<void> {
+    const tx = this.db.transaction(["files", "segments"], "readwrite");
+    const files = tx.objectStore("files"), segments = tx.objectStore("segments");
+    const descendants = IDBKeyRange.bound(path + "/", path + "/\uffff");
+    const [children, ownSegments, childSegments] = await Promise.all([
+      done(files.getAllKeys(descendants)), done(segments.index("path").getAllKeys(path)), done(segments.index("path").getAllKeys(descendants)),
+    ]);
+    files.delete(path);
+    for (const key of children) files.delete(key);
+    for (const key of [...ownSegments, ...childSegments]) segments.delete(key);
     await finished(tx);
   }
 

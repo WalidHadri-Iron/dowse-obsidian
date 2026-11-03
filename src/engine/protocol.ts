@@ -2,6 +2,7 @@
 
 /** The model's files on Hugging Face (downloaded once into Obsidian's cache, for all vaults). */
 export const MODEL_REPO = "onnx-community/embeddinggemma-2-ONNX";
+export const MODEL_REVISION = "daa72c51243991dfcaf9f9137d2c573d8f7790c0";
 
 export type Dtype = "q4" | "q4f16" | "quantized" | "fp16";
 
@@ -22,6 +23,7 @@ export type Request =
   | { op: "embed"; id: number; texts?: string[]; images?: Picture[]; audio?: Float32Array[] };
 
 export type Answer =
+  | { op: "device"; device: string; gpu: string | null }
   | { op: "done"; id: number; result: any }
   | { op: "failed"; id: number; message: string }
   | { op: "progress"; file: string; loaded: number; total: number }

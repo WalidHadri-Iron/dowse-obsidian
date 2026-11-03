@@ -22,6 +22,34 @@ export interface Shown {
   excerpt: string | null;
   info: Record<string, unknown>;
   score?: number;
+  mtime?: number;
+  moments?: [number, number | null][];   // additional matching places in the same file, best first
+}
+
+export type MediaMoment = [number, number | null];
+
+export function timestamp(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return `${h ? `${h}:${String(m).padStart(2, "0")}` : m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Audio embeddings locate a passage, not an aligned spoken word. Show its actual range, never a fake exact time. */
+export function momentLabel([start, end]: MediaMoment): string {
+  return end !== null && end > start ? `≈ ${timestamp(start)}–${timestamp(Math.ceil(end))}` : timestamp(start);
+}
+
+export function mediaMoments(shown: Shown): MediaMoment[] {
+  if ((shown.kind !== "audio" && shown.kind !== "video") || shown.loc === null) return [];
+  const out: MediaMoment[] = [];
+  for (const [start, end] of [[shown.loc, shown.locEnd], ...(shown.moments ?? [])] as MediaMoment[]) {
+    if (!Number.isFinite(start) || start < 0 || (end !== null && (!Number.isFinite(end) || end <= start))) continue;
+    if (!out.some(m => m[0] === start && m[1] === end)) out.push([start, end]);
+  }
+  return out.slice(0, 4);
+}
+
+export function atMoment(shown: Shown, [loc, locEnd]: MediaMoment): Shown {
+  return { ...shown, loc, locEnd };
 }
 
 export function nameOf(path: string): string {
@@ -47,8 +75,7 @@ export function placeOf(shown: Shown): string | null {
   if (shown.kind === "pdf") return `page ${shown.loc}`;
   if (shown.kind === "note") return shown.loc > 0 ? `line ${shown.loc + 1}` : null;   // (its start: nothing to say)
   if (shown.kind === "audio" || shown.kind === "video") {
-    const s = Math.round(shown.loc);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    return momentLabel([shown.loc, shown.locEnd]);
   }
   return null;
 }
@@ -79,7 +106,7 @@ export function runs(excerpt: string): { text: string; marked: boolean }[] {
 
 export function shownOf(hit: Hit): Shown {
   return { path: hit.path, kind: hit.kind, loc: hit.loc, locEnd: hit.locEnd, excerpt: hit.excerpt && readable(hit.excerpt),
-           info: hit.info, score: hit.score };
+           info: hit.info, score: hit.score, mtime: hit.mtime, moments: hit.moments.map(m => [...m]) };
 }
 
 /** An excerpt as it reads, not as it's written: Markdown's tables, emphasis, code marks, links and headings' hashes

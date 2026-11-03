@@ -5,6 +5,7 @@
     name: string;
     folder: string;
     visual: boolean;
+    version?: number;   // modification time: refresh edited previews without discarding other files' textures
     aisle: number;
     x: number;
     y: number;
@@ -40,7 +41,7 @@
   import Icon from "../wall/Icon.svelte";
 
   let { pieces, aisles, found = null, scores = null, clear = true, matches = null, selected = null, dark = false,
-        picture, onselect, onopen, onhover, ondragout, onstep }: {
+        picture, onselect, onopen, onhover, ondragout, onstep, searchIntent = 0 }: {
     pieces: MapPiece[];
     aisles: MapAisle[];
     found?: Map<string, number> | null;   // path → rank, while a search is on
@@ -49,6 +50,7 @@
     matches?: ReadonlySet<string> | null;
     selected?: string | null;
     dark?: boolean;
+    searchIntent?: number;   // changes only when the user asks a new search, never as indexing refreshes results
     /** A case's picture as a URL (a vault image, a PDF's first page, a video's still), or null: its face is drawn. */
     picture: (piece: MapPiece, pixels: number) => Promise<string | null>;
     onselect: (piece: MapPiece) => void;
@@ -120,16 +122,43 @@
 
   function caseRelevance(path: string) { return relevance(path, found, clear && (matches === null || matches.has(path))); }
   let shade: THREE.BufferGeometry, shadeMaterial: THREE.MeshBasicMaterial;
+  let builtAisles: MapAisle[] = [];
+  let builds = 0;
 
   function build(): void {
-    for (const c of cases) { scene.remove(c.group); c.material.map?.dispose(); c.material.dispose(); c.outline.dispose(); }
+    // Background indexing can republish the same map in fresh arrays. Keep its cases and sharp textures intact.
+    if (pieces.length === cases.length && pieces.every((p, i) => {
+      const old = cases[i].piece;
+      return p.path === old.path && p.kind === old.kind && p.name === old.name && p.folder === old.folder &&
+        p.visual === old.visual && p.version === old.version && p.aisle === old.aisle && p.x === old.x && p.y === old.y;
+    }) && aisles.length === builtAisles.length && aisles.every((a, i) => {
+      const old = builtAisles[i];
+      return a.index === old.index && a.id === old.id && a.label === old.label && a.count === old.count &&
+        a.x === old.x && a.y === old.y && a.radius === old.radius && a.about === old.about;
+    })) return;
+    builtAisles = aisles.map(a => ({ ...a }));
+    host.dataset.layoutBuilds = String(++builds);
+    const previous = byPath, wanted = new Map(pieces.map(p => [p.path, p]));
+    for (const c of cases) {
+      const next = wanted.get(c.piece.path);
+      if (next && next.kind === c.piece.kind && next.visual === c.piece.visual) continue;
+      previous.delete(c.piece.path);
+      scene.remove(c.group); c.material.map?.dispose(); c.material.dispose(); c.outline.dispose();
+    }
     cases = [];
     textureBytes = 0;
-    hovered = null;
+    if (hovered && !previous.has(hovered.piece.path)) hovered = null;
     byPath = new Map();
-    for (const badge of badges.values()) badge.remove();
-    badges.clear();
+    let reused = 0;
     for (const piece of pieces) {
+      const kept = previous.get(piece.path);
+      if (kept) {
+        if (kept.piece.version !== piece.version) { kept.pixels = 0; kept.retryAt = 0; kept.fallback = !piece.visual; }
+        kept.piece = piece;
+        kept.group.position.x = piece.x; kept.group.position.y = piece.y;
+        cases.push(kept); byPath.set(piece.path, kept); textureBytes += kept.bytes; reused++;
+        continue;
+      }
       const material = new THREE.MeshBasicMaterial({ color: placeholderColor, toneMapped: false });
       const { softness, texel } = softenBackground(material, fogColor, .45);
       const picture = new THREE.Mesh(plate, material);
@@ -153,6 +182,7 @@
       cases.push(item);
       byPath.set(piece.path, item);
     }
+    host.dataset.reusedCases = String(reused);
     tops = new Map();
     for (const piece of pieces) {
       const top = tops.get(piece.aisle);
@@ -313,6 +343,7 @@
       if (c.fallback) { card(c, pixels); continue; }
       if (loading >= 10) continue;
       c.pending = true; loading++;
+      const version = c.piece.version;
       const failed = () => {
         c.pending = false; loading--;
         if (current(c)) {
@@ -325,7 +356,8 @@
         if (!url) { c.retryAt = 0; failed(); return; }
         loader.load(url, (texture) => {
           c.pending = false; loading--;
-          useTexture(c, texture, pixels);
+          if (c.piece.version === version) useTexture(c, texture, pixels);
+          else texture.dispose();
           if (!disposed) wake();   // starts the next batch, even if the camera is already still
         }, undefined, failed);
       }, failed);
@@ -521,6 +553,8 @@
   function zoomBy(factor: number): void {
     viewTo = { ...viewTo, z: Math.min(Math.max(viewTo.z * factor, 2.2), 80) };
     cameraMode = "manual";
+    host.dataset.cameraMode = cameraMode;
+    host.dataset.targetDistance = viewTo.z.toFixed(4);
     wake();
   }
   function wheel(event: WheelEvent): void {
@@ -613,7 +647,16 @@
 
   // Search only updates relevance; it must not rebuild cases, discard sharp textures or reset a user's pan.
   $effect(() => { void pieces; void aisles; if (renderer) untrack(build); });
-  $effect(() => { void found; void scores; void clear; void matches; if (renderer) untrack(() => { emphasise(); found ? fitResults() : overview(); }); });
+  let fittedIntent: number | null = null;
+  $effect(() => {
+    void found; void scores; void clear; void matches;
+    const intent = searchIntent;
+    if (renderer) untrack(() => {
+      emphasise();
+      if (fittedIntent !== intent) { fittedIntent = intent; found ? fitResults() : overview(); }
+      else if (cameraMode === "results") refit();
+    });
+  });
   $effect(() => { void selected; if (renderer) untrack(emphasise); });
   $effect(() => {   // another theme: the page's colors switch first
     void dark;
@@ -630,6 +673,7 @@
   });
 
   function refit(): void {
+    if (cameraMode === "manual") { host.dataset.cameraMode = cameraMode; wake(); return; }
     let fit: ReturnType<typeof fitExplore> = null;
     if (cameraMode === "piece" && focusedPath) {
       const c = byPath.get(focusedPath);
@@ -691,7 +735,7 @@
       {#if found.size}<span class="size-note">Numbers = rank · ↑/↓ from one to the next</span>{/if}
     </div>
   {:else}
-    <div class="relevance-key"><span class="size-note">Scroll to zoom · drag to move · click a sign to go to its aisle · double-click a file to open it{ondragout ? " · drag a selected file into a note to link it" : ""}</span></div>
+    <div class="relevance-key"><span class="size-note">Scroll to zoom · drag to move · click a sign to see its group · double-click a file to open it{ondragout ? " · drag a selected file into a note to link it" : ""}</span></div>
   {/if}
 </div>
 

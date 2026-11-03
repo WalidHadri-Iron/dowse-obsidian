@@ -1,6 +1,6 @@
 // Pictures and sound as Dowse reads them (its `embedder.target_size`, `rules.is_screenshot`, `reading.Options`,
 // `media.sound`, `media.average_hash`): an image sized to fill its token budget, a screenshot given more of them, sound
-// cut into 30-second windows 25 seconds apart on a fixed grid (silence skipped), a video's frames kept one per shot.
+// cut into overlapping short windows on a fixed grid (silence skipped), a video's frames kept one per shot.
 
 export const RATE = 16000;   // the model's audio: mono, 16 kHz
 const SILENCE = 0.003;       // RMS ≈ −50 dBFS: silence isn't worth a vector
@@ -21,8 +21,8 @@ export interface MediaOptions {
 
 export function mediaOptions(gpu: boolean): MediaOptions {
   return gpu
-    ? { photo: 140, screenshot: 280, page: 280, frame: 70, minSide: 256, frameInterval: 3, maxFrames: 1200, window: 30, hop: 25, step: 600 }
-    : { photo: 70, screenshot: 140, page: 140, frame: 70, minSide: 256, frameInterval: 10, maxFrames: 400, window: 30, hop: 25, step: 300 };
+    ? { photo: 140, screenshot: 280, page: 280, frame: 70, minSide: 256, frameInterval: 3, maxFrames: 1200, window: 8, hop: 4, step: 600 }
+    : { photo: 70, screenshot: 140, page: 140, frame: 70, minSide: 256, frameInterval: 10, maxFrames: 400, window: 12, hop: 6, step: 300 };
 }
 
 const SCREENSHOT_PREFIXES = ["screenshot", "screen shot", "capture", "snip", "cleanshot", "scr-", "sharex",

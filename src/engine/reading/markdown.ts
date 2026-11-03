@@ -73,8 +73,10 @@ export function lines(source: string): { text: string; line: number; heading: bo
   let fenced = false, comment = false, html = false;
   for (let i = front; i < all.length; i++) {
     let line = all[i];
-    if (FENCE.test(line)) { fenced = !fenced; continue; }
-    if (fenced) { out.push({ text: line.replace(/\s+$/, ""), line: i, heading: false }); continue; }
+    if (fenced) {
+      if (FENCE.test(line)) { fenced = false; continue; }
+      out.push({ text: line.replace(/\s+$/, ""), line: i, heading: false }); continue;
+    }
     // Comments that may span lines: what's outside them stays
     let kept = "";
     let rest = line;
@@ -97,6 +99,9 @@ export function lines(source: string): { text: string; line: number; heading: bo
       }
     }
     line = kept;
+    // A fence inside a comment is hidden too (Excalidraw keeps its compressed scene there). Real code blocks keep
+    // comment markers literally, so only recognize an opening fence after removing comments outside code.
+    if (FENCE.test(line)) { fenced = true; continue; }
     out.push({ text: plain(line), line: i, heading: HEADING.test(line) });
   }
   return out;

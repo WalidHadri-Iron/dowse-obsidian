@@ -6,8 +6,8 @@ import { loadPdfJs, type App, type TFile } from "obsidian";
 import type { Pdf, Source, VaultFile } from "../engine/indexer.ts";
 import { RATE, targetSize } from "../engine/reading/media.ts";
 import type { Picture } from "../engine/protocol.ts";
+import { abortable, cancelled, checkSound, mediaEvent, SOUND_FILE_BYTES, SOUND_DECODED_BYTES } from "./media-limits.ts";
 
-const LARGEST_SOUND = 300 * 1024 * 1024;   // decoded at once: a larger file's sound isn't read (its pictures still are)
 
 function pixels(canvas: OffscreenCanvas, budget: number): Picture {
   const context = canvas.getContext("2d")!;
@@ -22,21 +22,6 @@ function grey(source: CanvasImageSource): number[] {
   context.drawImage(source, 0, 0, 8, 8);
   const data = context.getImageData(0, 0, 8, 8).data;
   return Array.from({ length: 64 }, (_, i) => 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]);
-}
-
-function once(target: EventTarget, success: string, timeout: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => { done(); reject(new Error(`no ${success} in ${timeout / 1000} s`)); }, timeout);
-    const ok = () => { done(); resolve(); };
-    const failed = () => { done(); reject(new Error("the video couldn't be read")); };
-    const done = () => {
-      window.clearTimeout(timer);
-      target.removeEventListener(success, ok);
-      target.removeEventListener("error", failed);
-    };
-    target.addEventListener(success, ok);
-    target.addEventListener("error", failed);
-  });
 }
 
 export class VaultSource implements Source {
@@ -86,7 +71,8 @@ export class VaultSource implements Source {
     return pixels(canvas, budget);
   }
 
-  async page(pdf: Pdf, number: number, budget: number): Promise<Picture | null> {
+  async page(pdf: Pdf, number: number, budget: number, signal?: AbortSignal): Promise<Picture | null> {
+    cancelled(signal);
     const page = await (pdf as any).getPage(number);
     const base = page.getViewport({ scale: 1 });
     const size = targetSize(base.height, base.width, budget);
@@ -96,41 +82,65 @@ export class VaultSource implements Source {
     const context = canvas.getContext("2d")!;
     context.fillStyle = "#fff";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: context, viewport }).promise;
+    const rendering = page.render({ canvasContext: context, viewport });
+    const stop = () => rendering.cancel();
+    signal?.addEventListener("abort", stop, { once: true });
+    try { await abortable(rendering.promise, signal); }
+    finally { signal?.removeEventListener("abort", stop); page.cleanup?.(); }
     return pixels(canvas, budget);
   }
 
-  async sound(path: string): Promise<Float32Array | null> {
+  async sound(path: string, signal?: AbortSignal): Promise<Float32Array | null> {
+    cancelled(signal);
     const file = this.file(path);
-    if (file.stat.size > LARGEST_SOUND) return null;
+    if (file.stat.size > SOUND_FILE_BYTES) return null;
+    const metadata = document.createElement("audio");
+    metadata.preload = "metadata";
+    try {
+      const ready = mediaEvent(metadata, "loadedmetadata", signal);
+      metadata.src = this.app.vault.getResourcePath(file);
+      await ready;
+      if (!checkSound(file.stat.size, metadata.duration)) return null;
+    } catch (error) { cancelled(signal); return null; }
+    finally { metadata.removeAttribute("src"); metadata.load(); }
     let decoded: AudioBuffer;
     try {
-      decoded = await new OfflineAudioContext(1, RATE, RATE).decodeAudioData(await this.app.vault.readBinary(file));
+      const data = await this.app.vault.readBinary(file);
+      cancelled(signal);
+      decoded = await abortable(new OfflineAudioContext(1, RATE, RATE).decodeAudioData(data), signal);
     } catch {
+      cancelled(signal);
       return null;   // no sound, or none Chromium can decode
     }
-    const mono = new Float32Array(decoded.length);
+    if (!checkSound(file.stat.size, decoded.duration) || decoded.length * decoded.numberOfChannels * 4 > SOUND_DECODED_BYTES) return null;
+    // Mixing is native asynchronous work, not millions of additions on Obsidian's interface thread.
+    const context = new OfflineAudioContext(1, decoded.length, RATE);
+    const source = context.createBufferSource(); source.buffer = decoded;
+    const splitter = context.createChannelSplitter(decoded.numberOfChannels); source.connect(splitter);
     for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
-      const data = decoded.getChannelData(channel);
-      for (let i = 0; i < mono.length; i++) mono[i] += data[i] / decoded.numberOfChannels;
+      const gain = context.createGain(); gain.gain.value = 1 / decoded.numberOfChannels;
+      splitter.connect(gain, channel); gain.connect(context.destination);
     }
-    return mono;
+    source.start();
+    const mixed = await abortable(context.startRendering(), signal);
+    return mixed.getChannelData(0).slice();
   }
 
-  async video(path: string) {
+  async video(path: string, signal?: AbortSignal) {
+    cancelled(signal);
     const element = document.createElement("video");
     element.muted = true;
     element.preload = "auto";
     element.crossOrigin = "anonymous";
     element.src = this.app.vault.getResourcePath(this.file(path));
     try {
-      await once(element, "loadedmetadata", 20000);
+      await mediaEvent(element, "loadedmetadata", signal);
     } catch {
       element.removeAttribute("src");
       element.load();
-      return null;
+      cancelled(signal); return null;
     }
-    if (!element.videoWidth || !Number.isFinite(element.duration)) return null;
+    if (!element.videoWidth || !Number.isFinite(element.duration)) { element.removeAttribute("src"); element.load(); return null; }
     return {
       duration: element.duration,
       frames: async (times: number[], budget: number) => {
@@ -138,10 +148,13 @@ export class VaultSource implements Source {
         const size = targetSize(element.videoHeight, element.videoWidth, budget);
         if (!size) return [];
         for (const time of times) {
-          element.currentTime = time;
+          cancelled(signal);
           try {
-            await once(element, "seeked", 20000);
+            const ready = mediaEvent(element, "seeked", signal);
+            element.currentTime = time;
+            await ready;
           } catch {
+            cancelled(signal);
             continue;
           }
           const canvas = new OffscreenCanvas(size[1], size[0]);

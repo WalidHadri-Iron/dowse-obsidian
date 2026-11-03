@@ -1,9 +1,10 @@
 // What the views ask of the plugin: one interface, so the Svelte views don't reach into Obsidian or the engine.
 
 import type { Answer } from "../plugin/search.ts";
-import type { ExploreMap } from "../engine/search/explore.ts";
+import type { ExploreGrouping, ExploreMap } from "../engine/search/explore.ts";
 import type { Piece } from "./wall/piece.ts";
 import type { Shown } from "./results.ts";
+import type { SearchOptions } from "../engine/search/searcher.ts";
 
 /** Reading as the views show it: the model (its download), how far reading is, and whether and why it's paused. */
 export interface Reading {
@@ -21,17 +22,21 @@ export interface Reading {
 export interface Controller {
   /** Dowse is on for this vault (else the views offer to turn it on). */
   on(): boolean;
+  active(path: string): boolean;
+  selection(): number;
   /** On for this vault; `parts`: the model's image and sound parts turned on (or not) first. */
   turnOn(parts?: { images: boolean; sound: boolean }): Promise<void>;
   /** The model's parts that are on: images (what images, PDF scans and videos show), sound (what's said and heard). */
   parts(): { images: boolean; sound: boolean };
   /** A part turned on or off (on: what waited for it is read; it's downloaded the first time). */
   setParts(change: { images?: boolean; sound?: boolean }): Promise<void>;
-  search(query: string, kinds: string[]): Promise<Answer>;
+  search(query: string, kinds: string[], filters?: SearchOptions): Promise<Answer>;
+  folders(): string[];
+  problem(): string | null;
   similar(path: string): Promise<Answer>;
   recent(): Promise<Shown[]>;
-  /** Explore's map of the vault (aisles of files that are alike). */
-  explore(): Promise<ExploreMap>;
+  /** Explore's map of the vault, grouped by content or by exact parent folder. */
+  explore(grouping?: ExploreGrouping): Promise<ExploreMap>;
   picture(piece: Piece, pixels: number, terms: string[]): Promise<string | null>;
   open(shown: Shown, newTab: boolean): void;
   /** A result dragged into a note: its link. */

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { averageHash, frameTimes, isScreenshot, RATE, sameShot, targetSize, windows } from "../src/engine/reading/media.ts";
+import { averageHash, frameTimes, isScreenshot, mediaOptions, RATE, sameShot, targetSize, windows } from "../src/engine/reading/media.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("fixtures/media.json", import.meta.url), "utf8"));
 
@@ -33,4 +33,18 @@ test("frames of one shot are told apart from a new one; frame times space out fo
   assert.deepEqual(frameTimes(10, 3, 1200), [0, 3, 6, 9]);
   assert.equal(frameTimes(7200, 3, 1200).length, 1200);
   assert.deepEqual(frameTimes(20, 3, 1200, 6, 12), [6, 9]);
+});
+
+test("timing windows stay short and overlap across both device modes and resumed reads", () => {
+  const samples = new Float32Array(51 * RATE).fill(.1);
+  for (const gpu of [true, false]) {
+    const options = mediaOptions(gpu), { window, hop, step } = options;
+    assert.ok(window <= 12 && hop <= 6 && hop < window);
+    assert.equal(step % hop, 0, "step boundaries must preserve the fixed timing grid");
+    const all = windows(samples, 0, 51, window, hop), start = hop * 3;
+    const resumed = windows(samples, start, 51, window, hop);
+    assert.deepEqual(resumed.map(w => [w.start, w.end]), all.filter(w => w.start >= start).map(w => [w.start, w.end]));
+    assert.ok(all.every(w => w.end - w.start <= window));
+    assert.equal(all.at(-1)!.end, 51, "the final phrase must stay searchable");
+  }
 });

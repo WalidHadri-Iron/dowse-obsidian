@@ -5,7 +5,7 @@ import { ItemView, SuggestModal, type App, type ViewStateResult, type WorkspaceL
 import { mount, unmount } from "svelte";
 import SearchPanel from "../ui/SearchPanel.svelte";
 import SimilarPanel from "../ui/SimilarPanel.svelte";
-import { lineOf, runs, shownOf, titleOf, type Shown } from "../ui/results.ts";
+import { atMoment, lineOf, mediaMoments, momentLabel, runs, shownOf, titleOf, type Shown } from "../ui/results.ts";
 import type { Controller } from "../ui/controller.ts";
 
 export const SEARCH_VIEW = "dowse-search";
@@ -80,6 +80,15 @@ export class QuickSearch extends SuggestModal<Shown> {
   private recent: Shown[] = [];
   private onlyClose = new WeakSet<Shown>();
   private firstClose: Shown | null = null;
+  private unclear = false;
+  private items: Shown[] = [];
+  private stops: (() => void)[] = [];
+  private summary: HTMLElement | null = null;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private waiting: (() => void) | null = null;
+  private asked = 0;
+  private active = false;
+  private displayedQuery = "";
 
   constructor(app: App, controller: Controller) {
     super(app);
@@ -87,34 +96,100 @@ export class QuickSearch extends SuggestModal<Shown> {
     this.setPlaceholder("Describe what you remember");
     this.setInstructions([
       { command: "↑↓", purpose: "to move" }, { command: "↵", purpose: "to open" },
-      { command: "ctrl ↵", purpose: "to open in a new tab" }, { command: "esc", purpose: "to close" },
+      { command: navigator.platform.includes("Mac") ? "⌘ ↵" : "ctrl ↵", purpose: "to open in a new tab" }, { command: "esc", purpose: "to close" },
     ]);
     this.scope.register(["Mod"], "Enter", (event) => {
       const chosen = (this as unknown as { chooser?: { values?: Shown[]; selectedItem?: number } }).chooser;
       const item = chosen?.values?.[chosen.selectedItem ?? 0];
-      if (item) { this.close(); this.controller.open(item, true); }
+      if (item && this.inputEl.value === this.displayedQuery) { this.close(); this.controller.open(item, true); }
       event.preventDefault();
       return false;
     });
-    void controller.recent().then((items) => (this.recent = items.slice(0, 20)));
+  }
+
+  onOpen(): void {
+    super.onOpen();
+    this.active = true;
+    this.summary = this.resultContainerEl.parentElement!.createDiv({ cls: "dowse-quick-status", attr: { role: "status", "aria-live": "polite" } });
+    this.resultContainerEl.before(this.summary);
+    let ready = this.controller.ready(), on = this.controller.on(), selection = this.controller.selection();
+    const refresh = () => { if (this.active) this.inputEl.dispatchEvent(new Event("input")); };
+    this.stops.push(this.controller.follow(refresh), this.controller.subscribe(() => {
+      const nextReady = this.controller.ready(), nextOn = this.controller.on();
+      const nextSelection = this.controller.selection();
+      if (nextSelection !== selection) {
+        selection = nextSelection;
+        this.items = this.items.filter(item => this.controller.active(item.path));
+        this.resultContainerEl.empty(); refresh();
+      }
+      if (nextReady !== ready || nextOn !== on) { ready = nextReady; on = nextOn; refresh(); }
+    }));
+  }
+
+  onClose(): void {
+    this.active = false; this.asked++;
+    clearTimeout(this.timer); this.waiting?.(); this.waiting = null;
+    for (const stop of this.stops.splice(0)) stop();
+    this.summary?.remove(); this.summary = null;
+    super.onClose();
   }
 
   async getSuggestions(query: string): Promise<Shown[]> {
-    if (!query.trim()) return this.recent;
-    const answer = await this.controller.search(query, []);
+    const mine = ++this.asked;
+    clearTimeout(this.timer); this.waiting?.();
+    if (!this.controller.on()) { this.summary?.setText("Dowse is off for this vault. Open the Dowse tab to turn it on."); return []; }
+    if (!query.trim()) {
+      const recent = await this.controller.recent();
+      if (mine !== this.asked) return this.items;
+      this.summary?.setText("Recent files"); this.unclear = false; this.firstClose = null;
+      this.recent = recent.slice(0, 20);
+      this.displayedQuery = query;
+      return this.items = this.recent;
+    }
+    this.summary?.setText(this.controller.ready() ? "Searching…" : "Searching words while the model starts…");
+    await new Promise<void>(resolve => { this.waiting = resolve; this.timer = setTimeout(resolve, 150); });
+    if (mine !== this.asked || !this.active) return this.items;
+    this.waiting = null;
+    let answer;
+    try { answer = await this.controller.search(query, []); }
+    catch { if (mine === this.asked) this.summary?.setText("Search could not finish. Try again."); return []; }
+    if (mine !== this.asked || !this.active) return this.items;
     const items = answer.hits.slice(0, answer.strong > 0 ? answer.strong + 3 : 10).map(shownOf);   // (the rest: in the tab)
+    this.displayedQuery = query;
+    this.unclear = answer.strong === 0;
+    this.summary?.setText((answer.strong ? `${answer.strong} match${answer.strong === 1 ? "" : "es"}` :
+      items.length ? "Nothing clearly matches · closest shown" : "Nothing found") + (answer.meaning ? "" : " · words only while the model starts"));
     this.firstClose = answer.strong > 0 && answer.strong < items.length ? items[answer.strong] : null;
-    if (answer.strong > 0) for (const item of items.slice(answer.strong)) this.onlyClose.add(item);
-    return items;
+    for (const item of items.slice(answer.strong)) this.onlyClose.add(item);
+    return this.items = items;
   }
 
   renderSuggestion(item: Shown, el: HTMLElement): void {
     el.addClass("dowse-suggestion");
     if (this.onlyClose.has(item)) el.addClass("is-close");
     if (item === this.firstClose) el.createDiv({ cls: "dowse-suggestion-divider", text: "Less likely" });
+    if (this.unclear) el.createSpan({ cls: "dowse-unseen", text: "Closest candidate: " });
     el.createDiv({ cls: "dowse-result-title", text: titleOf(item) });
     el.createDiv({ cls: "dowse-result-line", text: lineOf(item) });
-    if (item.excerpt) {
+    const moments = mediaMoments(item);
+    if (moments.length) {
+      const row = el.createDiv({ cls: "dowse-media-moments", attr: { "aria-label": `Matching moments in ${titleOf(item)}` } });
+      row.createSpan({ text: moments.length === 1 ? "Matching moment" : "Matching moments" });
+      for (const [i, moment] of moments.entries()) {
+        const button = row.createEl("button", { text: momentLabel(moment), cls: "dowse-moment", attr: {
+          type: "button", "aria-label": `Go to ${momentLabel(moment)} in ${titleOf(item)}` } });
+        if (i === 0) button.addClass("is-best");
+        button.addEventListener("mousedown", e => e.stopPropagation());
+        button.addEventListener("keydown", e => e.stopPropagation());
+        button.addEventListener("click", e => {
+          e.preventDefault(); e.stopPropagation();
+          if (this.inputEl.value !== this.displayedQuery) return;
+          this.close();
+          this.controller.open(atMoment(item, moment), e.ctrlKey || e.metaKey);
+        });
+      }
+    }
+    if (item.excerpt && this.inputEl.value.trim()) {
       const excerpt = el.createDiv({ cls: "dowse-result-excerpt" });
       for (const run of runs(item.excerpt)) {
         if (run.marked) excerpt.createEl("mark", { text: run.text });
@@ -124,6 +199,6 @@ export class QuickSearch extends SuggestModal<Shown> {
   }
 
   onChooseSuggestion(item: Shown, event: MouseEvent | KeyboardEvent): void {
-    this.controller.open(item, event.ctrlKey || event.metaKey);
+    if (this.inputEl.value === this.displayedQuery) this.controller.open(item, event.ctrlKey || event.metaKey);
   }
 }

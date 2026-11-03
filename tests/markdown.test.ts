@@ -29,6 +29,27 @@ test("comments are left out, code is kept, each line knows where it is", () => {
   ]);
 });
 
+test("Excalidraw text stays searchable while fenced compressed scene data stays hidden", () => {
+  const source = ["---", "excalidraw-plugin: parsed", "---", "# Garden layout", "## Text Elements",
+    "Rainwater tank ^water123", "Vegetable beds ^beds1234", "%%", "## Drawing", "```compressed-json",
+    "N4KAhiddenSceneDataNotSearchable", "```", "%%", "A note after the drawing."].join("\n");
+  const read = readNote("Garden.excalidraw.md", source);
+  const body = read.pieces.map(p => p.body).join("\n");
+  assert.match(body, /Rainwater tank/);
+  assert.match(body, /Vegetable beds/);
+  assert.match(body, /A note after the drawing/);
+  assert.doesNotMatch(body, /hiddenSceneData|compressed-json|## Drawing/);
+  assert.equal(lines(source).find(l => l.text === "A note after the drawing.")?.line, 13);
+});
+
+test("fences hidden in HTML comments do not swallow visible text, and real code keeps literal comment markers", () => {
+  const source = ["Before", "<!--", "```json", '{"hidden":true}', "```", "-->", "After", "```js",
+    'const percent = "%%";', 'const html = "<!--";', "```", "Last"].join("\n");
+  const visible = lines(source).filter(l => l.text).map(l => [l.text, l.line]);
+  assert.deepEqual(visible, [["Before", 0], ["After", 6], ['const percent = "%%";', 8],
+    ['const html = "<!--";', 9], ["Last", 11]]);
+});
+
 test("headings start passages; long sections are cut at line ends, overlapping a little", () => {
   const body = Array.from({ length: 40 }, (_, i) => `Line ${i}: ${"word ".repeat(18)}`).join("\n");
   const note = `# One\nshort section\n# Two\n${body}`;
