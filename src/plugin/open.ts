@@ -44,11 +44,12 @@ export async function openShown(app: App, shown: Shown, newTab = false): Promise
   }
   if (shown.kind === "canvas" && shown.loc !== null) {
     try {
-      const nodes = JSON.parse(await app.vault.cachedRead(file)).nodes as { id: string }[];
+      const nodes = (JSON.parse(await app.vault.cachedRead(file)) as { nodes?: { id: string }[] }).nodes ?? [];
       const id = nodes[shown.loc]?.id;
-      const canvas = (leaf.view as any).canvas;
-      const node = id && canvas?.nodes?.get(id);
-      if (node && typeof canvas.selectOnly === "function") {
+      // (Obsidian's canvas view: not in its public API, so looked for, never assumed)
+      const canvas = (leaf.view as unknown as { canvas?: CanvasApi }).canvas;
+      const node = id ? canvas?.nodes?.get(id) : undefined;
+      if (canvas && node && typeof canvas.selectOnly === "function") {
         canvas.selectOnly(node);
         canvas.zoomToSelection?.();
       }
@@ -60,4 +61,11 @@ export async function openShown(app: App, shown: Shown, newTab = false): Promise
 export function linkTo(app: App, path: string, from = ""): string | null {
   const file = app.vault.getFileByPath(path);
   return file ? app.fileManager.generateMarkdownLink(file, from) : null;
+}
+
+/** What opening a canvas result uses of Obsidian's canvas view. */
+interface CanvasApi {
+  nodes?: Map<string, unknown>;
+  selectOnly?(node: unknown): void;
+  zoomToSelection?(): void;
 }

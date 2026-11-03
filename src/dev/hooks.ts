@@ -14,6 +14,7 @@
 //                         far, and the time left it told), and the model's size in the cache.
 //   dowse-first.json     → Dowse left off, its tab opened (the first screen); dowse-dev-result.json once drawn
 
+import type { App } from "obsidian";
 import type DowsePlugin from "../main.ts";
 import { measureIfAsked } from "./measure.ts";
 import { QuickSearch } from "../plugin/views.ts";
@@ -25,7 +26,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   await measureIfAsked(plugin.app);
   if (await adapter.exists("dowse-first.json")) {
     await plugin.openSearch();
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => window.setTimeout(resolve, 3000));
     await adapter.write("dowse-dev-result.json", JSON.stringify({ done: true, on: plugin.settings.on }));
     return;
   }
@@ -40,13 +41,13 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   const wanted = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as { images?: boolean; sound?: boolean };
   if (wanted.images !== undefined || wanted.sound !== undefined) await plugin.setParts({ images: wanted.images, sound: wanted.sound });
   const early = wanted as { view?: string; layout?: string };
-  if (early.layout) localStorage.setItem("dowse-layout", early.layout);   // (before the tab is open)
+  if (early.layout) window.localStorage.setItem("dowse-layout", early.layout);   // (before the tab is open)
   if (early.view !== undefined) await plugin.openSearch(early.view);   // (open while the vault is read)
   if ((wanted as { settingsFirst?: boolean }).settingsFirst) plugin.openSettings();   // (open while the vault is read)
   if (!plugin.settings.on) await plugin.turnOn();
   const engine = plugin.engine!;
   const patience = (wanted as { waitSeconds?: number }).waitSeconds;   // (offline: reading never settles)
-  await (patience ? new Promise((resolve) => setTimeout(resolve, patience * 1000)) : engine.indexer.settled());
+  await (patience ? new Promise((resolve) => window.setTimeout(resolve, patience * 1000)) : engine.indexer.settled());
   window.clearInterval(sample);
   const read = (performance.now() - started) / 1000;
   const asked = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as
@@ -60,7 +61,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
                     hits: answer.hits.slice(0, 5).map((h) => ({ path: h.path, loc: h.loc, z: h.z, clear: h.clear,
                                                                 excerpt: h.excerpt, evidence: h.evidence })) });
   }
-  if (asked.layout) localStorage.setItem("dowse-layout", asked.layout);
+  if (asked.layout) window.localStorage.setItem("dowse-layout", asked.layout);
   if (asked.similar) {
     const file = plugin.app.vault.getFileByPath(asked.similar);
     if (file) await plugin.app.workspace.getLeaf(false).openFile(file);
@@ -69,8 +70,8 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   if (asked.view !== undefined) await plugin.openSearch(asked.view);
   if (asked.settings) plugin.openSettings();
   if (asked.settingsBottom) window.setTimeout(() => {   // (Settings › Dowse scrolled to its end, for its screenshot)
-    const tab = (plugin.app as any).setting?.activeTab;
-    for (let el = tab?.containerEl as HTMLElement | null; el; el = el.parentElement) el.scrollTop = el.scrollHeight;
+    const tab = (plugin.app as App & { setting?: { activeTab?: { containerEl?: HTMLElement } } }).setting?.activeTab;
+    for (let el: HTMLElement | null = tab?.containerEl ?? null; el; el = el.parentElement) el.scrollTop = el.scrollHeight;
   }, 1500);
   if (asked.quick !== undefined) {
     const modal = new QuickSearch(plugin.app, plugin.controller);
@@ -78,7 +79,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
     modal.inputEl.value = asked.quick;
     modal.inputEl.dispatchEvent(new Event("input"));
   }
-  await new Promise((resolve) => setTimeout(resolve, 4000));   // the views draw (the wall loads its pictures)
+  await new Promise((resolve) => window.setTimeout(resolve, 4000));   // the views draw (the wall loads its pictures)
   const files = await engine.store.files();
   const segments = await engine.store.segments();
   const graphics = { ...(await situation(engine.model.gpu)), preferred: await preferred(), set: asked.graphics };
@@ -88,14 +89,14 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   if ((asked as { removeModel?: boolean }).removeModel) {   // Dowse turned off here, the button clicked twice, as a person would
     await plugin.turnOff(false);
     plugin.openSettings();
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    const tab = (plugin.app as any).setting?.activeTab;
+    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    const tab = (plugin.app as App & { setting?: { activeTab?: { containerEl?: HTMLElement } } }).setting?.activeTab;
     const button = (text: string) => [...(tab?.containerEl?.querySelectorAll("button") ?? [])]
-      .find((b) => (b as HTMLElement).textContent === text) as HTMLButtonElement | undefined;
+      .find((b) => b.textContent === text);
     button("Remove")?.click();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
     button("Click again to remove")?.click();
-    await new Promise((resolve) => setTimeout(resolve, 8000));
+    await new Promise((resolve) => window.setTimeout(resolve, 8000));
     removed = { before: bytesNow, after: await modelBytes(), on: plugin.settings.on,
                 notices: [...document.querySelectorAll(".notice")].map((n) => (n as HTMLElement).textContent) };
   }

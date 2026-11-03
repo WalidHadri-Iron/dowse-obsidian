@@ -24,7 +24,7 @@ export type Request =
 
 export type Answer =
   | { op: "device"; device: string; gpu: string | null }
-  | { op: "done"; id: number; result: any }
+  | { op: "done"; id: number; result: unknown }
   | { op: "failed"; id: number; message: string }
   | { op: "progress"; file: string; loaded: number; total: number }
   | { op: "log"; message: string };   // (what the worker has to say: the console's)

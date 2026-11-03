@@ -7,8 +7,20 @@ import { AutoConfig, AutoModel, AutoProcessor, RawImage, env } from "@huggingfac
 import * as ort from "onnxruntime-web/webgpu";   // the same runtime transformers.js uses: its settings are these
 import { MODEL_REPO as MODEL, MODEL_REVISION, type Answer, type Picture, type Request } from "./protocol.ts";
 
-let processor: any = null;
-let model: any = null;
+// What this worker uses of transformers.js's processor and model (their typings are loose), and of WebGPU's adapter
+interface Processor {
+  (...inputs: unknown[]): Promise<Record<string, unknown>>;
+  image_processor: { max_soft_tokens: number };
+}
+interface Embedder {
+  (inputs: Record<string, unknown>): Promise<{ sentence_embedding: { data: Float32Array } }>;
+  dispose?: () => Promise<unknown>;
+}
+interface Adapter { info?: { vendor?: string; architecture?: string; description?: string } }
+interface Progress { status: string; file: string; loaded: number; total: number }
+
+let processor: Processor | null = null;
+let model: Embedder | null = null;
 let loaded: Extract<Request, { op: "load" }> | null = null;
 let deviceNow = "wasm";
 
@@ -20,7 +32,7 @@ function send(message: Answer, transfer: Transferable[] = []): void {
 // nothing of itself)
 const NativeWorker = self.Worker;
 if (NativeWorker) {
-  (self as any).Worker = class extends NativeWorker {
+  (self as unknown as { Worker: typeof Worker }).Worker = class extends NativeWorker {
     constructor(url: string | URL, options?: WorkerOptions) {
       super(url, options);
       this.addEventListener("error", (event) => send({ op: "log", message:
@@ -40,26 +52,30 @@ async function load(request: Extract<Request, { op: "load" }>): Promise<{ device
   env.allowLocalModels = false;
   env.useWasmCache = false;
   ort.env.wasm.wasmBinary = request.wasmBinary;
-  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([WEB_ONLY, request.glue], { type: "text/javascript" })) } as any;
+  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([WEB_ONLY, request.glue], { type: "text/javascript" })) };
   ort.env.webgpu.powerPreference = "high-performance";   // a laptop's graphics card, not its integrated GPU
-  let gpu: any = null;
-  if (request.device !== "wasm" && "gpu" in navigator) {
-    try { gpu = await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" }); }
+  let gpu: Adapter | null = null;
+  const webgpu = (navigator as Navigator & { gpu?: { requestAdapter(o: { powerPreference: string }): Promise<Adapter | null> } }).gpu;
+  if (request.device !== "wasm" && webgpu) {
+    try { gpu = await webgpu.requestAdapter({ powerPreference: "high-performance" }); }
     catch { send({ op: "log", message: "WebGPU is unavailable; using the processor." }); }
   }
   const device = gpu ? "webgpu" : "wasm";
   ort.env.wasm.numThreads = request.threads ?? (device === "wasm" ? THREADS : 1);
-  const progress = (event: any) => {
-    if (event.status === "progress") send({ op: "progress", file: event.file, loaded: event.loaded, total: event.total });
+  const progress = (event: unknown) => {
+    const p = event as Progress;
+    if (p.status === "progress") send({ op: "progress", file: p.file, loaded: p.loaded, total: p.total });
   };
   const options = { revision: MODEL_REVISION, progress_callback: progress };
-  processor = await AutoProcessor.from_pretrained(MODEL, options);
+  processor = (await AutoProcessor.from_pretrained(MODEL, options)) as unknown as Processor;
   // Only the parts asked for are downloaded and loaded (the model card's way: their configs taken out)
-  const config: any = await AutoConfig.from_pretrained(MODEL, options);
-  if (!request.parts.image) config.vision_config = null;
-  if (!request.parts.audio) config.audio_config = null;
+  const config = await AutoConfig.from_pretrained(MODEL, options);
+  const parts = config as unknown as { vision_config: unknown; audio_config: unknown };
+  if (!request.parts.image) parts.vision_config = null;
+  if (!request.parts.audio) parts.audio_config = null;
   try {
-    model = await AutoModel.from_pretrained(MODEL, { ...options, config, device, dtype: request.dtype as any });
+    const dtype = request.dtype === "quantized" ? "q8" : request.dtype;   // (transformers.js's name for the 8-bit files)
+    model = await AutoModel.from_pretrained(MODEL, { ...options, config, device, dtype });
   } catch (error) {
     if (device !== "webgpu") throw error;
     send({ op: "log", message: "The GPU could not start the model; using the processor." });
@@ -67,14 +83,16 @@ async function load(request: Extract<Request, { op: "load" }>): Promise<{ device
   }
   deviceNow = device;
   loaded = request;
-  const adapter = device === "webgpu" ? (await (ort.env.webgpu as any).adapter) ?? gpu : null;   // (the runtime's own, or ours)
+  const own = (ort.env.webgpu as { adapter?: Adapter | Promise<Adapter> }).adapter;
+  const adapter = device === "webgpu" ? (await own) ?? gpu : null;   // (the runtime's own, or ours)
   const info = adapter?.info;
   return { device, gpu: info ? [info.vendor, info.architecture, info.description].filter(Boolean).join(" ") : null };
 }
 
 async function vectors(...inputs: unknown[]): Promise<Float32Array> {
+  if (!processor || !model) throw new Error("the model isn't loaded");
   const output = await model(await processor(...inputs));
-  return output.sentence_embedding.data as Float32Array;
+  return output.sentence_embedding.data;
 }
 
 async function embed(request: Extract<Request, { op: "embed" }>): Promise<Float32Array[]> {
@@ -89,6 +107,7 @@ async function embed(request: Extract<Request, { op: "embed" }>): Promise<Float3
 }
 
 async function image(picture: Picture): Promise<Float32Array> {
+  if (!processor) throw new Error("the model isn't loaded");
   processor.image_processor.max_soft_tokens = picture.budget;   // sized for it already: no resize
   const raw = new RawImage(new Uint8ClampedArray(picture.rgba), picture.width, picture.height, 4).rgb();
   return vectors(null, [[raw]]);

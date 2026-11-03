@@ -2,7 +2,8 @@
 // through the pdf.js Obsidian carries, pictures and sound decoded by Chromium (sized for the model as Dowse sizes
 // them), videos played in a hidden video element from Obsidian's own URL for the file (streamed, never read whole).
 
-import { loadPdfJs, type App, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
+import { openPdf, type PdfDocument } from "./pdfjs.ts";
 import type { Pdf, Source, VaultFile } from "../engine/indexer.ts";
 import { RATE, targetSize } from "../engine/reading/media.ts";
 import type { Picture } from "../engine/protocol.ts";
@@ -12,7 +13,7 @@ import { abortable, cancelled, checkSound, mediaEvent, SOUND_FILE_BYTES, SOUND_D
 function pixels(canvas: OffscreenCanvas, budget: number): Picture {
   const context = canvas.getContext("2d")!;
   const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-  return { rgba: data.buffer as ArrayBuffer, width: canvas.width, height: canvas.height, budget };
+  return { rgba: data.buffer, width: canvas.width, height: canvas.height, budget };
 }
 
 /** A drawable's 8×8 grey levels (for telling a new shot from the same one). */
@@ -46,9 +47,7 @@ export class VaultSource implements Source {
   }
 
   async pdf(path: string): Promise<Pdf> {
-    const pdfjs = await loadPdfJs();
-    const data = await this.app.vault.readBinary(this.file(path));
-    return pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false }).promise;   // (it has destroy())
+    return openPdf(await this.app.vault.readBinary(this.file(path)));   // (it has destroy())
   }
 
   async picture(path: string, budget: number, minSide: number): Promise<Picture | null> {
@@ -73,7 +72,7 @@ export class VaultSource implements Source {
 
   async page(pdf: Pdf, number: number, budget: number, signal?: AbortSignal): Promise<Picture | null> {
     cancelled(signal);
-    const page = await (pdf as any).getPage(number);
+    const page = await (pdf as PdfDocument).getPage(number);   // (a document this source opened: pdf() above)
     const base = page.getViewport({ scale: 1 });
     const size = targetSize(base.height, base.width, budget);
     if (!size) return null;
@@ -101,7 +100,7 @@ export class VaultSource implements Source {
       metadata.src = this.app.vault.getResourcePath(file);
       await ready;
       if (!checkSound(file.stat.size, metadata.duration)) return null;
-    } catch (error) { cancelled(signal); return null; }
+    } catch { cancelled(signal); return null; }
     finally { metadata.removeAttribute("src"); metadata.load(); }
     let decoded: AudioBuffer;
     try {

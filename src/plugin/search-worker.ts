@@ -19,7 +19,8 @@ export class SearchWorker implements SearchCatalog {
   private opened: Promise<unknown>;
   constructor(name: string) {
     this.requests.onFailure = () => { this.worker.terminate(); URL.revokeObjectURL(this.url); };
-    this.worker.onmessage = e => this.requests.answer(e.data.id, e.data.result, e.data.error);
+    this.worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) =>
+      this.requests.answer(e.data.id, e.data.result, e.data.error);
     this.worker.onerror = e => {
       console.error("Dowse search worker failed", e.message, e.filename, e.lineno);
       this.requests.fail(new Error(e.message || "The search worker stopped"));

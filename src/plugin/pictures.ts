@@ -3,7 +3,8 @@
 // reads (page.ts, in the theme's colours, at the passage a search matched); kept a while (a few hundred, then the
 // oldest go).
 
-import { type App, loadPdfJs } from "obsidian";
+import type { App } from "obsidian";
+import { openPdf } from "./pdfjs.ts";
 import type { Piece } from "../ui/wall/piece.ts";
 import { drawPage, PAGE } from "./page.ts";
 import { mediaEvent } from "./media-limits.ts";
@@ -91,8 +92,7 @@ export class Pictures {
   private async page(path: string, number: number, pixels: number): Promise<string | null> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return null;
-    const pdfjs = await loadPdfJs();
-    const document = await pdfjs.getDocument({ data: new Uint8Array(await this.app.vault.readBinary(file)), isEvalSupported: false }).promise;
+    const document = await openPdf(await this.app.vault.readBinary(file));
     try {
       const page = await document.getPage(Math.min(Math.max(number, 1), document.numPages));
       const base = page.getViewport({ scale: 1 });

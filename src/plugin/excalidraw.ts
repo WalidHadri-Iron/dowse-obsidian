@@ -25,7 +25,7 @@ export function isExcalidraw(app: App, file: TFile): boolean {
   if (/\.excalidraw(?:\.md)?$/i.test(file.path)) return true;
   if (file.extension !== "md") return false;
   try { if (plugin(app)?.isExcalidrawFile?.(file)) return true; } catch { /* check cached frontmatter instead */ }
-  const mode = app.metadataCache.getFileCache(file)?.frontmatter?.["excalidraw-plugin"];
+  const mode: unknown = app.metadataCache.getFileCache(file)?.frontmatter?.["excalidraw-plugin"];
   return mode === "parsed" || mode === "raw";
 }
 

@@ -48,7 +48,7 @@ export class Keywords {
     for (const [column, text] of [[0, row.name], [1, row.body]] as const) {
       for (const word of tokens(text)) {
         let rows = this.postings.get(word);
-        if (!rows) this.postings.set(word, (rows = new Map()));
+        if (!rows) this.postings.set(word, (rows = new Map<number, [number, number]>()));
         const counts = rows.get(row.id) ?? [0, 0];
         counts[column]++;
         rows.set(row.id, counts);

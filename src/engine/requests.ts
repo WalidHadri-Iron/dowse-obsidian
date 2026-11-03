@@ -3,7 +3,7 @@ import { Cancelled } from "./cancel.ts";
 /** A terminated worker cannot accept work; every accepted request has a bounded lifetime. */
 export class Requests {
   private next = 1;
-  private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void;
+  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>; timeout: number }>();
   closed = false;
   onFailure: ((error: Error) => void) | null = null;
@@ -14,7 +14,7 @@ export class Requests {
     const id = this.next++;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => this.fail(new Cancelled("The model stopped responding. Try again or choose the processor in Dowse settings.")), timeout);
-      this.pending.set(id, { resolve, reject, timer, timeout });
+      this.pending.set(id, { resolve: (value) => resolve(value as T), reject, timer, timeout });   // (T: what the worker answers to this request)
       try { send(id); }
       catch (error) {
         clearTimeout(timer); this.pending.delete(id);

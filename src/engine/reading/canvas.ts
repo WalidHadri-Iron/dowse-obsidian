@@ -10,7 +10,7 @@ interface CanvasNode { id?: string; type?: string; text?: string; file?: string;
 export function readCanvas(path: string, source: string): Reading {
   let nodes: CanvasNode[] = [];
   try {
-    nodes = (JSON.parse(source).nodes ?? []) as CanvasNode[];
+    nodes = (JSON.parse(source) as { nodes?: CanvasNode[] }).nodes ?? [];
   } catch {
     return { pieces: [], info: {}, note: "not a canvas Obsidian can read" };
   }

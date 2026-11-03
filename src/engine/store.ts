@@ -87,7 +87,7 @@ export class Store {
   }
 
   async meta<T>(key: string): Promise<T | undefined> {
-    return done(this.db.transaction("meta").objectStore("meta").get(key));
+    return done(this.db.transaction("meta").objectStore("meta").get(key) as IDBRequest<T | undefined>);
   }
 
   async setMeta(key: string, value: unknown): Promise<void> {
@@ -97,26 +97,26 @@ export class Store {
   }
 
   files(): Promise<FileRow[]> {
-    return done(this.db.transaction("files").objectStore("files").getAll());
+    return done(this.db.transaction("files").objectStore("files").getAll() as IDBRequest<FileRow[]>);
   }
 
   file(path: string): Promise<FileRow | undefined> {
-    return done(this.db.transaction("files").objectStore("files").get(path));
+    return done(this.db.transaction("files").objectStore("files").get(path) as IDBRequest<FileRow | undefined>);
   }
 
   async filesWithin(path: string): Promise<FileRow[]> {
     const files = this.db.transaction("files").objectStore("files");
-    const [own, children] = await Promise.all([done(files.get(path)),
-      done(files.getAll(IDBKeyRange.bound(path + "/", path + "/\uffff")))]);
+    const [own, children] = await Promise.all([done(files.get(path) as IDBRequest<FileRow | undefined>),
+      done(files.getAll(IDBKeyRange.bound(path + "/", path + "/\uffff")) as IDBRequest<FileRow[]>)]);
     return own ? [own, ...children] : children;
   }
 
   segments(): Promise<SegmentRow[]> {
-    return done(this.db.transaction("segments").objectStore("segments").getAll());
+    return done(this.db.transaction("segments").objectStore("segments").getAll() as IDBRequest<SegmentRow[]>);
   }
 
   segmentsOf(path: string): Promise<SegmentRow[]> {
-    return done(this.db.transaction("segments").objectStore("segments").index("path").getAll(path));
+    return done(this.db.transaction("segments").objectStore("segments").index("path").getAll(path) as IDBRequest<SegmentRow[]>);
   }
 
   async putFile(row: FileRow): Promise<void> {

@@ -5,7 +5,7 @@
 // worker_threads, and fail.
 
 function webOnly(): void {
-  const scope = globalThis as any;
+  const scope = globalThis as { process?: unknown };
   if (typeof scope.process !== "undefined") {
     try {
       delete scope.process;

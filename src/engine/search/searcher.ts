@@ -138,7 +138,7 @@ export function spellingDistance(a: string, b: string, most: number): number {
   let before: number[] | null = null;
   let row = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
-    const current = [i, ...Array(b.length).fill(0)];
+    const current = [i, ...new Array<number>(b.length).fill(0)];
     for (let j = 1; j <= b.length; j++) {
       current[j] = Math.min(row[j] + 1, current[j - 1] + 1, row[j - 1] + (a[i - 1] !== b[j - 1] ? 1 : 0));
       if (before && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
@@ -376,7 +376,7 @@ export class Searcher {
       if (hits.length >= limit) break;
       const semantic = best.get(file), keyword = words.get(file);
       const useMeaning = semantic !== undefined && (semantic[0] >= zGate || keyword === undefined);
-      const segmentId = useMeaning ? this.rowSegment[semantic![2]] : keyword ? keyword.segment
+      const segmentId = useMeaning ? this.rowSegment[semantic[2]] : keyword ? keyword.segment
         : this.firstSegment(file);
       const segment = this.segments.get(segmentId);
       const info = this.files.get(file)!;

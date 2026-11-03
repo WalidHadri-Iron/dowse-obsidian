@@ -115,13 +115,13 @@ export function inline(text: string, terms: readonly string[]): Run[] {
   const pattern = /(!?\[\[([^\]|]*)(?:\|([^\]]*))?\]\])|(\[([^\]]*)\]\([^)]*\))|(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|((?:^|(?<=\s))#[\p{L}\p{N}_/-]+)/gu;
   let at = 0;
   for (const m of text.matchAll(pattern)) {
-    if (m.index! > at) runs.push({ text: text.slice(at, m.index) });
+    if (m.index > at) runs.push({ text: text.slice(at, m.index) });
     if (m[1]) runs.push({ text: (m[3] ?? m[2]).split("#")[0].split("/").pop() ?? "", accent: true });
     else if (m[4]) runs.push({ text: m[5], accent: true });
     else if (m[6]) runs.push({ text: m[6].slice(1, -1), code: true });
     else if (m[7]) runs.push({ text: m[7].slice(2, -2), bold: true });
     else if (m[8]) runs.push({ text: m[8], accent: true });
-    at = m.index! + m[0].length;
+    at = m.index + m[0].length;
   }
   if (at < text.length) runs.push({ text: text.slice(at) });
   const marked = terms.filter((t) => t.length >= 2).map((t) => t.toLowerCase());
@@ -169,7 +169,7 @@ async function image(app: App, link: string, from: string): Promise<HTMLImageEle
 async function drawNote(app: App, file: TFile, g: Ctx, p: Palette, from: number, terms: readonly string[]): Promise<void> {
   const markdown = await app.vault.cachedRead(file);
   const cache = app.metadataCache.getFileCache(file);
-  const front = cache?.frontmatter?.title;
+  const front: unknown = cache?.frontmatter?.title;
   const title = typeof front === "string" && front.trim() ? front : cache?.headings?.[0]?.level === 1 ? cache.headings[0].heading : file.basename;
   const W = PAGE.width - PAD * 2, bottom = PAGE.height - 18;
   let y = PAD + 4;
@@ -278,7 +278,7 @@ const CANVAS_COLORS: Record<string, string> = { 1: "--color-red", 2: "--color-or
 /** A canvas as a map of itself: its cards where they stand, its arrows, on Obsidian's dotted ground. */
 async function drawCanvas(app: App, file: TFile, g: Ctx, p: Palette): Promise<void> {
   let data: { nodes?: CanvasNode[]; edges?: { fromNode: string; toNode: string }[] } = {};
-  try { data = JSON.parse(await app.vault.cachedRead(file)); } catch { /* an empty one */ }
+  try { data = JSON.parse(await app.vault.cachedRead(file)) as typeof data; } catch { /* an empty one */ }
   g.fillStyle = p.faint;
   for (let x = 12; x < PAGE.width; x += 24) for (let y = 12; y < PAGE.height; y += 24) g.fillRect(x, y, 2, 2);
   const nodes = (data.nodes ?? []).filter((n) => Number.isFinite(n.x) && Number.isFinite(n.width));

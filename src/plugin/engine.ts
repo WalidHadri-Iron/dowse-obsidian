@@ -35,7 +35,7 @@ export interface ModelState {
 
 /** The vault's own key: Obsidian's id for it (one index per vault). */
 export function vaultKey(app: App): string {
-  return (app as any).appId ?? app.vault.getName();
+  return (app as App & { appId?: string }).appId ?? app.vault.getName();   // (appId isn't in the public API)
 }
 
 /** The room Dowse takes on this computer: this vault's index, and the model's files (for all vaults). */

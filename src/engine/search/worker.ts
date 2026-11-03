@@ -1,21 +1,34 @@
+// The search, in a worker of its own: the index's catalog (the searcher, the map) built and asked here, never on
+// Obsidian's thread. Each request is answered by id (plugin/search-worker.ts asks).
+
 import { Store } from "../store.ts";
 import { LocalCatalog } from "./catalog.ts";
 
+type Ask =
+  | { id: number; op: "open"; args: [name: string] }
+  | { id: number; op: "build"; args: Parameters<LocalCatalog["build"]> }
+  | { id: number; op: "search"; args: Parameters<LocalCatalog["search"]> }
+  | { id: number; op: "similar"; args: Parameters<LocalCatalog["similar"]> }
+  | { id: number; op: "map"; args: Parameters<LocalCatalog["map"]> };
+
 let catalog: LocalCatalog | null = null;
 let queue = Promise.resolve();
-self.onmessage = (event: MessageEvent) => {
+
+async function answer(ask: Ask): Promise<unknown> {
+  if (ask.op === "open") { catalog = new LocalCatalog(await Store.attach(ask.args[0])); return undefined; }
+  if (!catalog) throw new Error("Search has not opened its index");
+  switch (ask.op) {
+    case "build": return catalog.build(...ask.args);
+    case "search": return catalog.search(...ask.args);
+    case "similar": return catalog.similar(...ask.args);
+    case "map": return catalog.map(...ask.args);
+  }
+}
+
+self.onmessage = (event: MessageEvent<Ask>) => {
+  const ask = event.data;
   queue = queue.then(async () => {
-    const { id, op, args } = event.data;
-    try {
-      let result: unknown;
-      if (op === "open") catalog = new LocalCatalog(await Store.attach(args[0]));
-      else if (!catalog) throw new Error("Search has not opened its index");
-      else if (op === "build") result = await catalog.build(args[0], args[1]);
-      else if (op === "search") result = await catalog.search(args[0], args[1], args[2]);
-      else if (op === "similar") result = await catalog.similar(args[0], args[1], args[2]);
-      else if (op === "map") result = await catalog.map(args[0], args[1]);
-      else throw new Error("Unknown search request");
-      self.postMessage({ id, result });
-    } catch (error) { self.postMessage({ id, error: error instanceof Error ? error.message : String(error) }); }
+    try { self.postMessage({ id: ask.id, result: await answer(ask) }); }
+    catch (error) { self.postMessage({ id: ask.id, error: error instanceof Error ? error.message : String(error) }); }
   });
 };

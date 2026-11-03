@@ -19,7 +19,7 @@ const IMAGES: Record<string, [string, number]> = {
 };
 
 function bytes(base64: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)) as Uint8Array<ArrayBuffer>;
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 }
 
 async function picture(png: string, budget: number): Promise<Picture> {
@@ -28,7 +28,7 @@ async function picture(png: string, budget: number): Promise<Picture> {
   const context = canvas.getContext("2d")!;
   context.drawImage(bitmap, 0, 0);
   const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height);
-  return { rgba: pixels.data.buffer as ArrayBuffer, width: bitmap.width, height: bitmap.height, budget };
+  return { rgba: pixels.data.buffer, width: bitmap.width, height: bitmap.height, budget };
 }
 
 function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
@@ -110,10 +110,12 @@ export async function measureIfAsked(app: App): Promise<void> {
       : await one(run.dtype, run.device, run.threads));
     await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({ done: false, results }, null, 1));
   }
-  const gpu = (navigator as any).gpu ? await (navigator as any).gpu.requestAdapter({ powerPreference: "high-performance" }) : null;
+  interface Adapter { info?: { vendor?: string; architecture?: string; description?: string } }
+  const webgpu = (navigator as Navigator & { gpu?: { requestAdapter(o: { powerPreference: string }): Promise<Adapter | null> } }).gpu;
+  const gpu = webgpu ? await webgpu.requestAdapter({ powerPreference: "high-performance" }) : null;
   await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({
     done: true, userAgent: navigator.userAgent, webgpu: Boolean(gpu),
-    crossOriginIsolated: (self as any).crossOriginIsolated ?? null, sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
+    crossOriginIsolated: window.crossOriginIsolated ?? null, sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
     cores: navigator.hardwareConcurrency,
     adapter: gpu?.info ? { vendor: gpu.info.vendor, architecture: gpu.info.architecture, description: gpu.info.description } : null,
     results,

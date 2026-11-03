@@ -2,7 +2,7 @@
 // then the vault is read in the background and kept up to date, folders and files can be turned off by right-click.
 // Reading can be paused (the status bar's menu, a command), until resumed or Obsidian starts again; and while on battery.
 
-import { MarkdownView, Menu, Notice, Plugin, type TAbstractFile, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
+import { type App, MarkdownView, Menu, Notice, Plugin, type TAbstractFile, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import { Engine } from "./plugin/engine.ts";
 import { linkTo, openShown } from "./plugin/open.ts";
 import { Pictures } from "./plugin/pictures.ts";
@@ -41,7 +41,7 @@ export default class DowsePlugin extends Plugin {
   controller!: Controller;
 
   async onload(): Promise<void> {
-    this.settings = { ...DEFAULTS, ...(await this.loadData()) };
+    this.settings = { ...DEFAULTS, ...((await this.loadData()) as Partial<Settings> | null) };
     this.statusBar = this.addStatusBarItem();
     this.statusBar.addClass("dowse-status");
     this.statusBar.onClickEvent((event) => this.statusMenu({ x: event.clientX, y: event.clientY }));
@@ -239,7 +239,7 @@ export default class DowsePlugin extends Plugin {
       linked: (path) => this.linked(path),
       title: (path) => {
         const cache = this.app.metadataCache.getCache(path);
-        const title = cache?.frontmatter?.title;
+        const title: unknown = cache?.frontmatter?.title;
         return typeof title === "string" && title.trim() ? title
           : cache?.headings?.[0]?.heading ?? path.split("/").pop()!.replace(/\.[^.]+$/, "");
       },
@@ -334,9 +334,10 @@ export default class DowsePlugin extends Plugin {
   }
 
   openSettings(): void {
-    const setting = (this.app as any).setting;
-    setting?.open();
-    setting?.openTabById(this.manifest.id);
+    // (Obsidian's settings window: not in its public API, so looked for, never assumed)
+    const setting = (this.app as App & { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
+    setting?.open?.();
+    setting?.openTabById?.(this.manifest.id);
   }
 
   private registerEvents(): void {
