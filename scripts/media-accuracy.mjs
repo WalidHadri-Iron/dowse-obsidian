@@ -16,9 +16,9 @@ test.page.on("console", message => { if (message.text().startsWith("MEDIA ")) co
 try {
   const cache = await seedModelCache(test.page, "all");
   console.log("Verified model data ready; using real inference.");
-  const results = await test.page.evaluate(async truth => {
+  const results = await test.page.evaluate(async ({ truth, device }) => {
     const p = app.plugins.plugins.dowse;
-    p.paused = true; p.settings.images = true; p.settings.sound = true; p.settings.device = "auto";
+    p.paused = true; p.settings.images = true; p.settings.sound = true; p.settings.device = device;
     await p.save(); await p.turnOn();
     const model = await p.engine.use(); await p.engine.search.ensureProbes(model);
     const out = { model: p.engine.model, baseline: null, short: null };
@@ -52,7 +52,7 @@ try {
       search.close(); await store.clear(); store.close();
     }
     return out;
-  }, truth);
+  }, { truth, device: process.env.DOWSE_MEDIA_DEVICE === "wasm" ? "wasm" : "auto" });
   function metrics(variant, kind) {
     const rows = truth.queries.map((q, i) => ({ q, a: variant.answers[i] })).filter(({ q }) => q.kind === kind);
     const positive = rows.filter(({ q }) => q.expect.length), negative = rows.filter(({ q }) => !q.expect.length);

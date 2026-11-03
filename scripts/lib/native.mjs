@@ -52,7 +52,7 @@ export async function native(label, prepare = async () => {}) {
     browser = await puppeteer.connect({ browserWSEndpoint: endpoint, defaultViewport: null });
     let page;
     await until(async () => { page = (await browser.pages()).find(p => p.url().startsWith("app://obsidian.md")); return !!page; }, "Obsidian did not open the test vault");
-    page.on("pageerror", error => errors.push(error.message));
+    page.on("pageerror", error => errors.push(error.stack ?? error.message));
     page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
     await until(() => page.evaluate(() => {
       const trust = [...document.querySelectorAll("button")].find(b => /trust author/i.test(b.textContent));

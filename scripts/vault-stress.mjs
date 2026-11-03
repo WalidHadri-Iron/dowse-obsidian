@@ -28,7 +28,7 @@ try {
     state.observer = new PerformanceObserver(list => state.tasks.push(...list.getEntries().map(e => e.duration)));
     state.observer.observe({ type: "longtask" });
     state.timer = setInterval(() => { const now = performance.now(); state.gaps.push(now - last); last = now;
-      const s = app.plugins.plugins.dowse.engine.status; state.states.push(s.state); state.completed = s.done; }, 20);
+      const s = app.plugins.plugins.dowse?.engine?.status; if (s) { state.states.push(s.state); state.completed = s.done; } }, 20);
   });
   // Indexing starts with the newest files; wait for an anchor independently of filesystem enumeration order.
   let anchor;
@@ -42,10 +42,11 @@ try {
     assert.ok(Date.now() < deadline, "indexing and search must finish within 30 minutes");
     const began = Date.now();
     const query = `${cycle % 2 ? "record " : ""}stabilitytoken${anchorName}`;
-    await page.click(".dowse-search input");
-    const modifier = process.platform === "darwin" ? "Meta" : "Control";
-    await page.keyboard.down(modifier); await page.keyboard.press("a"); await page.keyboard.up(modifier);
+    // CDP does not dispatch macOS native edit commands for Meta+A. Select through the DOM, then exercise actual
+    // keyboard deletion and typing on every platform; assert the field really cleared before entering another query.
+    await page.$eval(".dowse-search input", input => { input.focus(); input.select(); });
     await page.keyboard.press("Backspace");
+    assert.equal(await page.$eval(".dowse-search input", input => input.value), "", "deleting the previous query clears the field");
     await page.waitForFunction(() => document.querySelector(".dowse-body")?.getAttribute("aria-busy") === "false", { polling: 50, timeout: 60000 });
     await page.keyboard.type(query, { delay: 2 });
     await page.waitForFunction(title => document.querySelector(".dowse-body")?.getAttribute("aria-busy") === "false" &&
@@ -92,18 +93,22 @@ try {
   await page.evaluate(() => app.plugins.plugins.dowse.engine.search.changed(true));
   result.final = await page.evaluate(async mutations => {
     const p = app.plugins.plugins.dowse; await p.fileEvents.settled();
+    const d = window.__stress; clearInterval(d.timer); d.observer.disconnect();
+    // Do not count this test's whole-vault verification work as application interaction time.
     const rows = await p.engine.store.files(), segments = await p.engine.store.segments();
+    const byPath = new Map(rows.map(r => [r.path, r]));
+    const segmentPaths = new Map();
+    for (const s of segments) { const own = segmentPaths.get(s.path) ?? []; own.push(s); segmentPaths.set(s.path, own); }
     const failures = [];
-    for (const path of mutations.deleted) if (rows.some(r => r.path === path) || segments.some(s => s.path === path)) failures.push(`ghost ${path}`);
-    for (const [path, marker] of mutations.edited) if (!path.includes("Group7/") && !segments.some(s => s.path === path && s.body.includes(marker) && s.body.includes("revision 2"))) failures.push(`stale edit ${path}`);
+    for (const path of mutations.deleted) if (byPath.has(path) || segmentPaths.has(path)) failures.push(`ghost ${path}`);
+    for (const [path, marker] of mutations.edited) if (!path.includes("Group7/") && !(segmentPaths.get(path) ?? []).some(s => s.body.includes(marker) && s.body.includes("revision 2"))) failures.push(`stale edit ${path}`);
     for (const [old, path, marker] of mutations.renamed) {
-      if (rows.some(r => r.path === old) || segments.some(s => s.path === old)) failures.push(`old name ${old}`);
-      if (!path.includes("Group7/") && !segments.some(s => s.path === path && s.body.includes(marker))) failures.push(`missing rename ${path}`);
+      if (byPath.has(old) || segmentPaths.has(old)) failures.push(`old name ${old}`);
+      if (!path.includes("Group7/") && !(segmentPaths.get(path) ?? []).some(s => s.body.includes(marker))) failures.push(`missing rename ${path}`);
     }
     const expected = app.vault.getFiles().filter(f => f.extension === "md" && !f.path.startsWith("Sources/Group7/"));
-    const complete = expected.filter(f => rows.some(r => r.path === f.path && r.state === "done")).length;
+    const complete = expected.filter(f => byPath.get(f.path)?.state === "done").length;
     const hidden = await p.engine.search.search("", { within: ["Sources/Group7"] }, false);
-    const d = window.__stress; clearInterval(d.timer); d.observer.disconnect();
     return { expected: expected.length, complete, rows: rows.length, vectors: segments.filter(s => s.vector).length, failed: rows.filter(r => r.state === "failed"),
       failures, excludedHits: hidden.hits.length, status: p.engine.status, maxTask: Math.max(0, ...d.tasks),
       maxGap: Math.max(0, ...d.gaps), states: [...new Set(d.states)] };
@@ -118,6 +123,10 @@ try {
   console.log(JSON.stringify(result.final));
   console.log(`Large-vault reliability passed in ${result.seconds.toFixed(1)} seconds: ${artifacts}`);
 } catch (error) {
-  await writeFile(join(artifacts, "failure.json"), JSON.stringify({ error: error.stack, result, errors: test.errors, consoleErrors: test.consoleErrors }, null, 2));
+  const state = await page.evaluate(() => ({ input: document.querySelector(".dowse-search input")?.value,
+    summary: document.querySelector(".dowse-summary")?.textContent, title: document.querySelector(".dowse-result-title")?.textContent,
+    busy: document.querySelector(".dowse-body")?.getAttribute("aria-busy"), status: app.plugins.plugins.dowse?.engine?.status,
+    active: document.activeElement?.outerHTML })).catch(() => null);
+  await writeFile(join(artifacts, "failure.json"), JSON.stringify({ error: error.stack, result, state, errors: test.errors, consoleErrors: test.consoleErrors }, null, 2));
   throw error;
 } finally { await test.close(); }
