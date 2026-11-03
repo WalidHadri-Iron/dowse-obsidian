@@ -22,7 +22,7 @@ export interface MediaOptions {
 export function mediaOptions(gpu: boolean): MediaOptions {
   return gpu
     ? { photo: 140, screenshot: 280, page: 280, frame: 70, minSide: 256, frameInterval: 3, maxFrames: 1200, window: 8, hop: 4, step: 600 }
-    : { photo: 70, screenshot: 140, page: 140, frame: 70, minSide: 256, frameInterval: 10, maxFrames: 400, window: 12, hop: 6, step: 300 };
+    : { photo: 70, screenshot: 140, page: 140, frame: 70, minSide: 256, frameInterval: 3, maxFrames: 400, window: 12, hop: 6, step: 300 };
 }
 
 const SCREENSHOT_PREFIXES = ["screenshot", "screen shot", "capture", "snip", "cleanshot", "scr-", "sharex",

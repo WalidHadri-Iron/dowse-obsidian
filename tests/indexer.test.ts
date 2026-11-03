@@ -328,3 +328,17 @@ test("a stale queue snapshot cannot reread a file completed by another writer", 
   assert.equal((await store.segmentsOf("a.md"))[0].body, "Saved elsewhere.");
   store.close();
 });
+
+test("old video indexes are reread and include short shots in processor mode", async () => {
+  const { store, source, indexer } = await setup({ "Clip.mp4": "" }, undefined, { image: true, audio: false });
+  await store.saveStep({ path: "Clip.mp4", kind: "video", mtime: 1, size: 0, reader: 2, state: "done", info: {}, next: null },
+    [{ path: "Clip.mp4", kind: "frame", modality: "image", loc: 10, locEnd: null, body: "old coarse sample", vector: null }], true);
+  (indexer as any).options.gpu = () => false;
+  source.video = async () => ({ duration: 18, frames: async times => times.map(time => ({ time, picture,
+    grey: Array.from({ length: 64 }, (_, i) => time < 6 ? i * 4 : time < 12 ? 255 - i * 4 : i % 2 * 255) })), close() {} });
+  assert.equal(await indexer.sync(), 1, "the old reader version must migrate automatically");
+  await readAll(indexer);
+  assert.deepEqual((await store.segmentsOf("Clip.mp4")).map(s => s.loc), [0, 6, 12]);
+  assert.equal((await store.file("Clip.mp4"))!.reader, 3);
+  store.close();
+});

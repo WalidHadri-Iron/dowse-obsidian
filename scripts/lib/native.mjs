@@ -14,7 +14,7 @@ export async function until(test, message, ms = 120000) {
 }
 
 /** A disposable real Obsidian install/profile; never attaches to the person's open vault. */
-export async function native(label, prepare = async () => {}) {
+export async function native(label, prepare = async () => {}, { protocolTimeout = 180000 } = {}) {
   const executable = process.env.OBSIDIAN_EXECUTABLE;
   if (!executable) throw new Error("Set OBSIDIAN_EXECUTABLE to an installed Obsidian executable.");
   const root = await mkdtemp(join(tmpdir(), `dowse-${label}-`));
@@ -28,7 +28,8 @@ export async function native(label, prepare = async () => {}) {
   await prepare(vault);
   const child = spawn(executable, [`--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-sandbox",
     "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
-    ...(process.env.DOWSE_NATIVE_SOFTWARE === "1" ? ["--disable-gpu"] : [])], {
+    ...(process.env.DOWSE_NATIVE_SOFTWARE === "1" ? ["--disable-gpu"] : []),
+    ...(process.env.DOWSE_TEST_SWIFTSHADER === "1" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [])], {
     stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32",
   });
   let stderr = "", browser;
@@ -49,7 +50,7 @@ export async function native(label, prepare = async () => {}) {
   try {
     let endpoint;
     await until(() => { endpoint = /DevTools listening on (ws:\/\/[^\s]+)/.exec(stderr)?.[1]; return !!endpoint; }, "Obsidian debugger did not start");
-    browser = await puppeteer.connect({ browserWSEndpoint: endpoint, defaultViewport: null });
+    browser = await puppeteer.connect({ browserWSEndpoint: endpoint, defaultViewport: null, protocolTimeout });
     let page;
     await until(async () => { page = (await browser.pages()).find(p => p.url().startsWith("app://obsidian.md")); return !!page; }, "Obsidian did not open the test vault");
     page.on("pageerror", error => errors.push(error.stack ?? error.message));

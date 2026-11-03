@@ -12,7 +12,8 @@ export async function seedModelCache(page, parts = "text") {
   const manifest = process.env.DOWSE_MODEL_MANIFEST ? JSON.parse(await readFile(process.env.DOWSE_MODEL_MANIFEST, "utf8")) : null;
   const names = ["config.json", "config_sentence_transformers.json", "chat_template.jinja", "preprocessor_config.json",
     "processor_config.json", "tokenizer_config.json", "tokenizer.json", "onnx/model_fp16.onnx", "onnx/model_fp16.onnx_data"];
-  if (parts === "all") names.push("onnx/audio_encoder_fp16.onnx", "onnx/audio_encoder_fp16.onnx_data", "onnx/vision_encoder_fp16.onnx", "onnx/vision_encoder_fp16.onnx_data");
+  if (parts === "all" || parts === "audio") names.push("onnx/audio_encoder_fp16.onnx", "onnx/audio_encoder_fp16.onnx_data");
+  if (parts === "all" || parts === "image") names.push("onnx/vision_encoder_fp16.onnx", "onnx/vision_encoder_fp16.onnx_data");
   const files = [];
   for (const name of names) {
     let path = process.env.DOWSE_MODEL_CACHE ? join(process.env.DOWSE_MODEL_CACHE, name) : manifest.find(f => f.name === name)?.path;

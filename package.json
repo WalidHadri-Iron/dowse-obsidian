@@ -13,7 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "test:native-model": "node scripts/native-model.mjs",
     "test:vault": "node scripts/vault-stress.mjs",
-    "test:media": "node scripts/media-accuracy.mjs"
+    "test:media": "node scripts/media-accuracy.mjs",
+    "test:views": "node scripts/native-views.mjs"
   },
   "license": "MIT",
   "devDependencies": {

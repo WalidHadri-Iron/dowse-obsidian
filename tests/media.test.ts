@@ -35,6 +35,19 @@ test("frames of one shot are told apart from a new one; frame times space out fo
   assert.deepEqual(frameTimes(20, 3, 1200, 6, 12), [6, 9]);
 });
 
+test("both devices sample short video shots while keeping their long-video frame budgets", () => {
+  for (const gpu of [true, false]) {
+    const options = mediaOptions(gpu);
+    const short = frameTimes(18, options.frameInterval, options.maxFrames);
+    for (const [start, end] of [[0, 6], [6, 12], [12, 18]]) {
+      assert.ok(short.some(t => t >= start && t < end), `missing shot ${start}–${end} in ${gpu ? "GPU" : "CPU"} mode`);
+    }
+    const full = frameTimes(7200, options.frameInterval, options.maxFrames);
+    assert.ok(full.length <= options.maxFrames);
+    assert.deepEqual(frameTimes(7200, options.frameInterval, options.maxFrames, 300, 600), full.filter(t => t >= 300 && t < 600));
+  }
+});
+
 test("timing windows stay short and overlap across both device modes and resumed reads", () => {
   const samples = new Float32Array(51 * RATE).fill(.1);
   for (const gpu of [true, false]) {

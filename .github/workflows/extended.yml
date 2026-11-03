@@ -1,0 +1,66 @@
+name: Extended native integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  views:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/install-test-excalidraw.mjs
+      - name: Installed Obsidian on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
+          curl -fL https://github.com/obsidianmd/obsidian-releases/releases/download/v1.15.0/obsidian-1.15.0.tar.gz -o "$RUNNER_TEMP/obsidian.tar.gz"
+          mkdir "$RUNNER_TEMP/obsidian"
+          tar -xzf "$RUNNER_TEMP/obsidian.tar.gz" -C "$RUNNER_TEMP/obsidian" --strip-components=1
+          echo "OBSIDIAN_EXECUTABLE=$RUNNER_TEMP/obsidian/obsidian" >> "$GITHUB_ENV"
+      - name: Installed Obsidian on Mac
+        if: runner.os == 'macOS'
+        run: |
+          curl -fL https://github.com/obsidianmd/obsidian-releases/releases/download/v1.15.0/Obsidian-1.15.0.dmg -o "$RUNNER_TEMP/Obsidian.dmg"
+          hdiutil attach "$RUNNER_TEMP/Obsidian.dmg" -mountpoint "$RUNNER_TEMP/dowse-obsidian-mount"
+          cp -R "$RUNNER_TEMP/dowse-obsidian-mount/Obsidian.app" "$RUNNER_TEMP/Obsidian.app"
+          hdiutil detach "$RUNNER_TEMP/dowse-obsidian-mount"
+          echo "OBSIDIAN_EXECUTABLE=$RUNNER_TEMP/Obsidian.app/Contents/MacOS/Obsidian" >> "$GITHUB_ENV"
+      - name: Mixed readers, checkpoints, native views and Excalidraw
+        shell: bash
+        env:
+          DOWSE_TEST_SWIFTSHADER: '1'
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a npm run test:views
+          else
+            npm run test:views
+          fi
+      - name: Actual automatic model selection and fallback
+        shell: bash
+        env:
+          DOWSE_MODEL_DEVICE: auto
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a npm run test:native-model
+          else
+            npm run test:native-model
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-${{ runner.os }}
+          path: |
+            .cache/release-validation/views-*
+            .cache/release-validation/model-*

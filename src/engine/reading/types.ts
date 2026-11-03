@@ -32,7 +32,7 @@ export interface Reading {
 }
 
 /** What each kind's reader keeps, by version: when one changes, files read before are read again. */
-export const READERS: Record<Kind, number> = { note: 2, pdf: 1, canvas: 1, image: 1, audio: 2, video: 2 };
+export const READERS: Record<Kind, number> = { note: 2, pdf: 1, canvas: 1, image: 1, audio: 2, video: 3 };
 
 /** The model's parts each kind needs for its content (else it's searched by name, and read once they're on). */
 export const NEEDS: Record<Kind, ("image" | "audio")[]> = {

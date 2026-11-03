@@ -56,8 +56,8 @@ turning Dowse off; it is otherwise retained when the plugin is removed.
 - Audio/video results expose clickable **Matching moments** in Quick search, the list, and the selected result in
   Wall or Explore. Audio uses overlapping 8-second passages on the GPU (12 seconds on the processor); ranges are
   approximate rather than word-aligned transcripts. Video frame timestamps identify sampled frames (normally
-  every 3 seconds on the GPU or 10 seconds on the processor, spaced further apart in long videos). Media files
-  indexed with the older 30-second audio windows are reread automatically once after upgrading.
+  every 3 seconds, spaced further apart in long videos to cap work at 1,200 GPU or 400 processor samples). Media files
+  indexed with older audio windows or coarse video sampling are reread automatically once after upgrading.
 - Search remains usable while indexing. Editing or clearing the query invalidates older responses immediately;
   previous results cannot be opened while a different query is pending. Background refreshes retain the selected
   result, Explore's manual camera position, and existing thumbnails. Updated files refresh their own previews.
@@ -134,3 +134,17 @@ passages using the same pinned model. `DOWSE_MEDIA_CORPUS` must contain `truth.j
 photos named in `scripts/fixtures/media-corpus.json` (requires ffmpeg). Ground truth and transcripts stay outside the
 vault. Reports distinguish file retrieval, passage timing, and absent-query confidence; clean synthetic fixtures do
 not substitute for noisy real recordings. See `measurements/` for actual run results and their limits.
+
+Further native tests: `node scripts/install-test-excalidraw.mjs` downloads and verifies pinned Excalidraw 2.29.1
+code into the test cache; then `OBSIDIAN_EXECUTABLE=/path/to/Obsidian npm run test:views` exercises synthetic notes,
+images, PDF, canvas and audio, checkpoint/restart, oversize rejection before decoding, closest-result presentation
+in all views, 3D rendering, folder grouping, and Excalidraw preview/editor integration. Inference is replaced in this
+interaction test; accuracy is measured separately. `DOWSE_TEST_SWIFTSHADER=1` explicitly selects the software
+renderer for headless testing. The manual **Extended native integration** workflow runs it on Linux and macOS,
+then tests actual automatic model selection without forcing software rendering.
+
+`scripts/degrade-media-corpus.py` produces seeded-noise and speed-adjusted corpus variants with corresponding
+independent timestamp labels. `DOWSE_MEDIA_KINDS=audio` limits the media harness to audio; `DOWSE_MEDIA_DEVICE=wasm`
+selects processor inference, and `DOWSE_MEDIA_SEEK=1` also opens unique returned moments in actual native players.
+The baseline retains the former 30-second audio windows and 10-second processor video sampling. Reports include
+per-file retrieval regressions, confidence false alarms and player seek evidence, not only top-one retrieval.
