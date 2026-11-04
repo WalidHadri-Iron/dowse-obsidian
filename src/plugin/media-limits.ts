@@ -1,3 +1,4 @@
+import { after } from "../engine/timers.ts";
 import { Cancelled } from "../engine/cancel.ts";
 
 // Browser decoders consume a complete recording. Larger inputs remain searchable by name, never decoded blindly.
@@ -25,13 +26,13 @@ export function mediaEvent(target: EventTarget, success: string, signal?: AbortS
   cancelled(signal);
   return new Promise((resolve, reject) => {
     const clear = () => {
-      clearTimeout(timer); target.removeEventListener(success, ready); target.removeEventListener("error", failed);
+      timer?.(); target.removeEventListener(success, ready); target.removeEventListener("error", failed);
       signal?.removeEventListener("abort", abort);
     };
     const ready = () => { clear(); resolve(); };
     const failed = () => { clear(); reject(new Error("This media could not be loaded")); };
     const abort = () => { clear(); reject(new Cancelled("Reading was stopped")); };
-    const timer = setTimeout(() => { clear(); reject(new Error("The media preview took too long to load")); }, ms);
+    const timer = after(() => { clear(); reject(new Error("The media preview took too long to load")); }, ms);
     target.addEventListener(success, ready); target.addEventListener("error", failed);
     signal?.addEventListener("abort", abort, { once: true });
   });

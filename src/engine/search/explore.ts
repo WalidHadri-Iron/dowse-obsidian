@@ -22,6 +22,7 @@
 //
 // Dowse's aisles of your own (a description that gathers files) aren't here: every aisle is found.
 
+import { after } from "../timers.ts";
 import type { Store } from "../store.ts";
 import { Prompts } from "../reading/types.ts";
 
@@ -149,7 +150,7 @@ export function seeded(seed: number): () => number {
   };
 }
 
-const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const pause = () => new Promise<void>((resolve) => after(resolve, 0));
 
 /** (labels, unit centres): spherical k-means with k-means++ seeding. Yields between iterations (a large vault's
  * map is made beside what you're doing). */

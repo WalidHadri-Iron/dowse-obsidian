@@ -9,7 +9,7 @@ from the owner's Obsidian account at <https://community.obsidian.md>.
 - Plugin ID: `dowse`; name: `Dowse`; author: `Walid Hadri`.
 - Minimum app version: **1.15.0**, matching the native test runtime. A recent
   installer is also needed for the embedded inference runtime.
-- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.1`),
+- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.2`),
   without a `v` prefix. A version such as `0.1.0` is valid; 1.0 is not required.
 - Attach **main.js**, **manifest.json**, and **styles.css** directly to that release.
   The ZIP, checksums, notices and validation report can also be attached.
@@ -26,10 +26,11 @@ source revision. Complete the main CI and extended native workflows on that
 revision. The latter includes the settings enable/disable and processor-choice
 regression check in addition to mixed readers, views and Excalidraw coverage.
 
-The official Obsidian ESLint configuration checks production TypeScript, Svelte
-scripts/templates, the manifest, package metadata and license. Shared modules
-that also run in workers/Node deliberately retain environment-neutral timers;
-the worker bootstrap deliberately uses `globalThis`, since it has no `window`.
+The official Obsidian ESLint configuration checks production and development
+TypeScript, Svelte scripts/templates, the manifest, package metadata and license.
+Shared modules schedule and cancel through their owning window or worker; Node
+unit tests supply a minimal worker timer host. Worker bootstrap uses `self`.
+No rules exclude these modules or suppress their timer/platform checks.
 The pinned ONNX runtime's `powerPreference` property currently produces one
 reported deprecation warning; it still controls the runtime's GPU selection.
 No rule suppresses that warning. The lint dependencies are development-only;

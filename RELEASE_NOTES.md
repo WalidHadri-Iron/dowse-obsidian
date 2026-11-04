@@ -1,19 +1,20 @@
-# Dowse for Obsidian 0.1.1 — preview
+# Dowse for Obsidian 0.1.2 — preview
 
 Search an Obsidian vault by meaning across notes, PDFs, images, recordings, videos
 and Canvas cards. Processing runs locally, with a one-time download of the selected
 EmbeddingGemma 2 model parts. This is a desktop preview for manual installation.
 
-## Submission preparation
+## Community review fixes
 
-- Release tag `0.1.1` matches the plugin manifest exactly. Individual `main.js`,
-  `manifest.json` and `styles.css` assets support Obsidian's community installer.
-- Dependency licenses/notices are embedded in `main.js` as well as the ZIP.
-- Minimum app version is now **Obsidian 1.15.0**, matching native test coverage.
-- Settings use the host's declarative lifecycle with searchable aliases. View
-  preferences now use Obsidian's vault-scoped storage.
-- Official submission lint checks cover TypeScript and Svelte source. The pinned
-  ONNX GPU-selection setting reports one deprecation warning; lint has no errors.
+- Replace navigator-based benchmark metadata with Obsidian's Platform API.
+- Lint development source as well as production source, matching the directory's
+  scan coverage. Remove the earlier timer and worker lint exceptions.
+- Schedule and cancel timers in their owning window or worker. Regression tests
+  cover cancellation after the active host changes and worker startup without Node detection.
+- Keep projected labels visible with scoped selectors, removing `!important`.
+  The visually hidden accessibility text no longer requires `clip-path`.
+- Retain the tested ONNX GPU preference behavior. Its deprecation is a reported
+  recommendation; no lint rule suppresses it.
 
 ## Included
 
@@ -32,7 +33,7 @@ EmbeddingGemma 2 model parts. This is a desktop preview for manual installation.
 
 ## Install
 
-1. Download and unzip `dowse-obsidian-0.1.1.zip`.
+1. Download and unzip `dowse-obsidian-0.1.2.zip`.
 2. Copy its entire `dowse/` folder into a test vault's `.obsidian/plugins/` folder.
 3. Enable Dowse under Settings → Community plugins, open the Dowse tab and choose
    **Turn on for this vault**. Pictures and sound are optional model downloads.
@@ -44,7 +45,7 @@ again. The archive includes dependency licenses/notices. `SHA256SUMS` and
 ## Validation and current limits
 
 The release's source revision is checked by the linked CI runs. Local validation
-includes 82 unit tests, type/Svelte checks, and actual CPU-model indexing/search
+includes 85 unit tests, type/Svelte checks, and actual CPU-model indexing/search
 in native Obsidian. The previous preview ZIP was also tested in Windows and Linux. CI covers builds on
 Windows/macOS/Linux, native model/reliability checks on macOS/Linux, and extended
 mixed-view/Excalidraw integration and settings enable/disable/processor changes. These do not replace manual Apple GPU testing.

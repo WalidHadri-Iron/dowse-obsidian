@@ -3,7 +3,7 @@
 // against Dowse's reference vectors, with the time each took. Asked for by a note `dowse-measure.json` at the vault's
 // root ([{"dtype": "q4", "device": "auto"}, ...]); answered in `dowse-measure-result.json` beside it.
 
-import type { App } from "obsidian";
+import { type App, Platform } from "obsidian";
 import { Model } from "../engine/model.ts";
 import type { Dtype, Picture } from "../engine/protocol.ts";
 import { chunks } from "../engine/searchtext.ts";
@@ -114,7 +114,7 @@ export async function measureIfAsked(app: App): Promise<void> {
   const webgpu = (navigator as Navigator & { gpu?: { requestAdapter(o: { powerPreference: string }): Promise<Adapter | null> } }).gpu;
   const gpu = webgpu ? await webgpu.requestAdapter({ powerPreference: "high-performance" }) : null;
   await app.vault.adapter.write("dowse-measure-result.json", JSON.stringify({
-    done: true, userAgent: navigator.userAgent, webgpu: Boolean(gpu),
+    done: true, platform: Platform.isWin ? "windows" : Platform.isMacOS ? "macos" : "linux", webgpu: Boolean(gpu),
     crossOriginIsolated: window.crossOriginIsolated ?? null, sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
     cores: navigator.hardwareConcurrency,
     adapter: gpu?.info ? { vendor: gpu.info.vendor, architecture: gpu.info.architecture, description: gpu.info.description } : null,

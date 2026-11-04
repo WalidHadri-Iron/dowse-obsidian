@@ -721,6 +721,7 @@
   .map-view { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; height: 100%; }
   .map-view > .relevance-key { order: -1; }
   .floor { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: grab; touch-action: none; }
+  .floor:global(.dowse-pointer) { cursor: pointer; }
   /* As the wall's zoom: closer, further, the whole floor (above Obsidian's status bar) */
   .map-controls { position: absolute; right: var(--s-4); bottom: calc(var(--s-4) + 32px); z-index: 2;
                   display: flex; align-items: center; padding: var(--s-1); border: 1px solid var(--hairline);
@@ -767,6 +768,7 @@
     padding: 5px 9px; background: var(--tag); color: var(--tag-ink); border-radius: var(--r-steel); box-shadow: var(--lift-1);
     opacity: 0; transition: opacity var(--t-rail) var(--rail);
   }
+  .tags :global(.case-tag.dowse-visible) { opacity: 1; }
   .tags :global(.case-tag b) { font: 600 var(--text-sm) / 1.25 var(--face-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags :global(.case-tag span) { font: 400 11.5px / 1.3 var(--face-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags :global(.case-tag[data-relevance="match"]) { box-shadow: var(--lift-1), inset 0 -2px 0 var(--search-match); }

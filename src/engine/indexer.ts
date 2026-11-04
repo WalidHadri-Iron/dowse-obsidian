@@ -11,6 +11,7 @@
 // read once the model's part for it (images, sound) is on. Until then the row says what it waits for, and turning that
 // part on reads it, a PDF's scanned pages added to what was read of its text.
 
+import { after } from "./timers.ts";
 import { readCanvas } from "./reading/canvas.ts";
 import { readNote } from "./reading/markdown.ts";
 import { averageHash, frameTimes, isScreenshot, mediaOptions, sameShot, windows, type MediaOptions } from "./reading/media.ts";
@@ -285,13 +286,13 @@ export class Indexer {
 
   /** Waits `ms`, or until poked. */
   private async sleep(ms?: number, version = this.version): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: (() => void) | undefined;
     await new Promise<void>((resolve) => {
       if (this.stopped || version !== this.version) { resolve(); return; }
       this.wake = resolve;
-      if (ms !== undefined) timer = setTimeout(resolve, ms);
+      if (ms !== undefined) timer = after(resolve, ms);
     });
-    clearTimeout(timer);
+    timer?.();
     this.wake = null;
   }
 

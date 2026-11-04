@@ -2,6 +2,7 @@
 // few seconds, as Dowse does), the query asked of the model, and the answer. A search never waits for the model:
 // while it's asleep or loading, words alone (and it's woken; the view searches again once it's ready).
 
+import { after } from "../engine/timers.ts";
 import { forMeaning } from "../engine/search/dates.ts";
 import { wordVectors, type ExploreGrouping, type ExploreMap } from "../engine/search/explore.ts";
 import { LocalCatalog, type SearchCatalog } from "../engine/search/catalog.ts";
@@ -59,8 +60,8 @@ export class VaultSearch {
   private folderMapping: Promise<ExploreMap> | null = null;
   private words: Float32Array[] | null = null;
   private follower: Follower | null = null;
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private urgent: ReturnType<typeof setTimeout> | null = null;
+  private timer: (() => void) | null = null;
+  private urgent: (() => void) | null = null;
 
   /** `active`: whether a file is searched (not turned off: what's turned off keeps its index, and isn't found). */
   constructor(store: Store, model: { ready: () => Model | null; wake: () => void }, active: (path: string) => boolean,
@@ -78,9 +79,9 @@ export class VaultSearch {
     this.revision++;
     if (immediate) {
       this.forced++;
-      if (this.timer) clearTimeout(this.timer);
+      this.timer?.();
       this.timer = null;
-      if (!this.urgent && this.follower?.wanted()) this.urgent = setTimeout(() => {
+      if (!this.urgent && this.follower?.wanted()) this.urgent = after(() => {
         this.urgent = null;
         if (!this.closed) { this.follower?.made(); this.schedule(); }
       }, 50);
@@ -97,8 +98,8 @@ export class VaultSearch {
 
   close(): void {
     this.closed = true;
-    if (this.timer) clearTimeout(this.timer);
-    if (this.urgent) clearTimeout(this.urgent);
+    this.timer?.();
+    this.urgent?.();
     this.timer = null;
     this.follower = null;
     this.catalog.close();
@@ -106,7 +107,7 @@ export class VaultSearch {
 
   private schedule(): void {
     if (this.timer || !this.follower?.wanted()) return;
-    this.timer = setTimeout(() => void this.refresh().catch(error => { if (!this.closed) console.error(error); }), Math.max(0, this.builtAt + FOLLOW_MS - Date.now()));
+    this.timer = after(() => void this.refresh().catch(error => { if (!this.closed) console.error(error); }), Math.max(0, this.builtAt + FOLLOW_MS - Date.now()));
   }
 
   private async refresh(): Promise<void> {
@@ -120,7 +121,7 @@ export class VaultSearch {
     if (map && map.of !== this.buildId) {   // the map someone looked at: made again, at most every MAP_REFRESH_MS
       const wait = map.at + MAP_REFRESH_MS - Date.now();
       if (wait > 0) {
-        this.timer = setTimeout(() => void this.refresh().catch(error => { if (!this.closed) console.error(error); }), wait);
+        this.timer = after(() => void this.refresh().catch(error => { if (!this.closed) console.error(error); }), wait);
         return;
       }
       await this.explore();

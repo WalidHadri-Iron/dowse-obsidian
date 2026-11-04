@@ -798,6 +798,7 @@
     transition: opacity var(--t-rail) var(--rail);
     will-change: transform;
   }
+  .tags :global(.tag.dowse-visible) { opacity: 1; }
   .tags :global(.tag b) {
     font: 600 var(--text-sm) / 1.25 var(--face-ui);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

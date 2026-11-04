@@ -1,6 +1,6 @@
 {
   "name": "dowse-obsidian",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Find anything in your vault by what's in it: notes, PDFs, images, recordings and videos, searched by meaning, on your computer.",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "dev": "node esbuild.config.mjs",
     "check": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --threshold warning",
     "measure": "node scripts/measure-model.mjs",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --import ./tests/runtime.mjs --test tests/*.test.ts",
     "smoke": "node scripts/smoke.mjs",
     "test:native-model": "node scripts/native-model.mjs",
     "test:vault": "node scripts/vault-stress.mjs",

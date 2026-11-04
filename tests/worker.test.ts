@@ -78,3 +78,17 @@ test("indexing and search cannot enter the same model session concurrently", asy
   await Promise.all([wait(2), wait(3)]);
   assert.equal(self.maxActive, 1);
 });
+
+
+test("worker bootstrap removes Node detection without accessing a browser window", async () => {
+  const result = await build({ entryPoints: [fileURLToPath(new URL("../src/engine/web-only.ts", import.meta.url))],
+    bundle: true, write: false, format: "iife", globalName: "Bootstrap", platform: "browser" });
+  const context: any = { process: { versions: { node: "test" } } };
+  context.self = context;
+  runInNewContext(result.outputFiles[0].text, context);
+  assert.equal(context.process, undefined);
+  assert.equal(context.window, undefined);
+  context.process = { versions: { node: "thread" } };
+  runInNewContext(context.Bootstrap.WEB_ONLY, context);
+  assert.equal(context.process, undefined, "the serialized bootstrap works in runtime child workers too");
+});

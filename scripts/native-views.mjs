@@ -114,10 +114,15 @@ try {
   await page.waitForSelector('.wall canvas');
   await until(() => page.evaluate(() => !!document.querySelector('.wall .tag[data-relevance="closest"], .tag[data-relevance="closest"]')), "Wall claims a match");
   await page.click('[aria-label="Zoom in"]'); await delay(500);
+  await until(() => page.evaluate(() => [...document.querySelectorAll('.wall .tag.dowse-visible')]
+    .some(tag => Number(getComputedStyle(tag).opacity) > .9)), "Wall labels remain hidden after zoom");
   await page.screenshot({ path: join(artifacts, "wall.png") });
   await page.click('[aria-label="Explore: the whole vault"]');
   await page.waitForSelector('.floor canvas');
   await until(() => page.evaluate(() => !!document.querySelector('.rank-badge[data-relevance="closest"]')), "Explore claims a match");
+  await page.click('.rank-badge[data-relevance="closest"]');
+  await until(() => page.evaluate(() => [...document.querySelectorAll('.floor .case-tag.dowse-visible')]
+    .some(tag => Number(getComputedStyle(tag).opacity) > .9)), "Explore labels remain hidden after selection");
   await query("");
   await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent === 'By folder').click());
   await until(() => page.evaluate(() => /grouped by folder/.test(document.querySelector('.dowse-summary')?.textContent)), "Folder grouping did not load");

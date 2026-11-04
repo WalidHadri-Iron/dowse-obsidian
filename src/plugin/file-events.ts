@@ -1,6 +1,8 @@
 /** Debounce by path, never by a stale TFile object. Mutations are ordered, including folder renames/deletions. */
+import { after } from "../engine/timers.ts";
+
 export class FileEvents {
-  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private timers = new Map<string, () => void>();
   private tail = Promise.resolve();
   private closed = false;
   private apply: (path: string) => Promise<void>;
@@ -13,17 +15,17 @@ export class FileEvents {
   queue(path: string): void {
     if (this.closed) return;
     this.cancel(path, false);
-    this.timers.set(path, setTimeout(() => {
+    this.timers.set(path, after(() => {
       this.timers.delete(path);
       void this.order(() => this.apply(path));
     }, this.ms));
   }
 
   cancel(path: string, recursive = true): void {
-    clearTimeout(this.timers.get(path)); this.timers.delete(path);
+    this.timers.get(path)?.(); this.timers.delete(path);
     if (!recursive) return;
     for (const [key, timer] of this.timers) if (key === path || key.startsWith(path + "/")) {
-      clearTimeout(timer); this.timers.delete(key);
+      timer(); this.timers.delete(key);
     }
   }
 
@@ -39,7 +41,7 @@ export class FileEvents {
   }
 
   clear(): void {
-    for (const timer of this.timers.values()) clearTimeout(timer);
+    for (const timer of this.timers.values()) timer();
     this.timers.clear();
   }
   async settled(): Promise<void> { await this.tail; }

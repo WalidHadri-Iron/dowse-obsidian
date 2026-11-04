@@ -64,9 +64,9 @@ approximate; results depend on the contents of your vault. [About the demos](doc
 ## Install
 
 Dowse is currently an early preview, installed manually.
-**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/0.1.1/dowse-obsidian-0.1.1.zip)**,
+**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/0.1.2/dowse-obsidian-0.1.2.zip)**,
 then unzip it. It contains a `dowse/` folder ready to copy into your vault.
-[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/0.1.1)
+[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/0.1.2)
 are available with the preview. You can also [build from this repository](docs/development.md#build-and-package).
 
 1. Start with a separate test vault.
