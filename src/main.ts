@@ -5,6 +5,7 @@
 import { type App, MarkdownView, Menu, Notice, Plugin, type TAbstractFile, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import { Engine } from "./plugin/engine.ts";
 import { linkTo, openShown } from "./plugin/open.ts";
+import { linkPlacement } from "./plugin/link-placement.ts";
 import { Pictures } from "./plugin/pictures.ts";
 import { DEFAULTS, isOn, renamed, turnOff, turnOn, type Settings } from "./plugin/settings.ts";
 import { FileEvents } from "./plugin/file-events.ts";
@@ -167,7 +168,8 @@ export default class DowsePlugin extends Plugin {
     return linked;
   }
 
-  /** A link to `target` written into the note `into`: at its cursor when it's open for editing, else at its end. */
+  /** A link to `target` written into the note `into`: at its cursor when it's open for editing and the cursor was
+   * placed (linkPlacement), else at its end. */
   private async insertLink(into: string, target: string): Promise<"cursor" | "end" | null> {
     const link = linkTo(this.app, target, into);
     const note = this.app.vault.getFileByPath(into);
@@ -175,8 +177,15 @@ export default class DowsePlugin extends Plugin {
     const view = this.app.workspace.getLeavesOfType("markdown").map((leaf) => leaf.view)
       .find((v): v is MarkdownView => v instanceof MarkdownView && v.file?.path === into && v.getMode() === "source");
     if (view) {
-      view.editor.replaceSelection(link);
-      return "cursor";
+      const editor = view.editor, cursor = editor.getCursor("from");
+      const placed = linkPlacement(link, editor.getLine(cursor.line), cursor.line, cursor.ch, editor.somethingSelected());
+      if (placed !== null) {
+        editor.replaceSelection(placed);
+        return "cursor";
+      }
+      const last = editor.lastLine(), end = editor.getLine(last);
+      editor.replaceRange(`${end ? "\n" : ""}${link}`, { line: last, ch: end.length });   // (in the editor: undoable)
+      return "end";
     }
     await this.app.vault.process(note, (text) => `${text}${text.endsWith("\n") || !text ? "" : "\n"}${link}\n`);
     return "end";
