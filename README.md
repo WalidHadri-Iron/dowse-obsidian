@@ -10,7 +10,7 @@ original file, its page, or an approximate matching moment.
 The search model runs on your computer. **No account, API key or cloud search
 service is required.**
 
-**Early preview · Desktop only · Manual installation**
+**Desktop only · Free · In Obsidian's community plugins**
 
 [See it in action](#see-it-in-action) · [Install](#install) · [Get started](#get-started)
 · [Supported files](#supported-files) · [Privacy and requirements](#privacy-and-requirements)
@@ -63,34 +63,31 @@ approximate; results depend on the contents of your vault. [About the demos](doc
 
 ## Install
 
-Dowse is currently an early preview, installed manually.
-**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/0.1.2/dowse-obsidian-0.1.2.zip)**,
-then unzip it. It contains a `dowse/` folder ready to copy into your vault.
-[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/0.1.2)
-are available with the preview. You can also [build from this repository](docs/development.md#build-and-package).
+In Obsidian, open **Settings → Community plugins**, turn community plugins on if
+needed, choose **Browse**, search for **Dowse**, then **Install** and **Enable**.
+Obsidian keeps it up to date from there.
 
-1. Start with a separate test vault.
-2. Put `main.js`, `manifest.json` and `styles.css` together in this folder:
-
-   ```text
-   Your vault/
-   └── .obsidian/
-       └── plugins/
-           └── dowse/
-               ├── main.js
-               ├── manifest.json
-               └── styles.css
-   ```
-
-3. In Obsidian, enable community plugins, then enable **Dowse** under
-   **Settings → Community plugins**. Reload Obsidian if the plugin is not listed.
-4. Click the **Dowse ribbon icon**, or run **Dowse: Open the search tab** from the
-   command palette.
+Then click the **Dowse ribbon icon**, or run **Dowse: Open the search tab** from the
+command palette.
 
 Installing the plugin does not start indexing or download a model. You choose
 when to turn it on for each vault.
 
-To update, disable Dowse, replace **all three files together**, then enable it again.
+Dowse's `main.js` is about 7 MB, mostly the runtime that runs the model on your
+computer. Obsidian Sync's Standard plan doesn't sync files over 5 MB, so on that
+plan install Dowse on each computer from **Browse**.
+
+<details>
+<summary>Install by hand</summary>
+
+Download `main.js`, `manifest.json` and `styles.css` from the
+[latest release](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/latest),
+put them together in your vault's `.obsidian/plugins/dowse/` folder, then enable
+**Dowse** under **Settings → Community plugins** (reload Obsidian if it isn't listed).
+To update by hand, replace all three files together. You can also
+[build from this repository](docs/development.md#build-and-package).
+
+</details>
 
 ## Get started
 
