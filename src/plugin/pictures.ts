@@ -9,6 +9,7 @@ import type { Piece } from "../ui/wall/piece.ts";
 import { drawPage, PAGE } from "./page.ts";
 import { mediaEvent } from "./media-limits.ts";
 import { drawExcalidraw, excalidrawRenderer, isExcalidraw } from "./excalidraw.ts";
+import { Lane } from "./lane.ts";
 
 const KEEP = 200;
 
@@ -17,6 +18,7 @@ export class Pictures {
   private made = new Map<string, Promise<string | null>>();   // key → blob URL (oldest first)
   private abort = new AbortController();
   private drawings = Promise.resolve();   // rendering several big drawings simultaneously can stall Obsidian
+  private lane = new Lane(2);   // pages and stills: two at a time, the largest asked first (lane.ts)
 
   constructor(app: App) {
     this.app = app;
@@ -71,7 +73,8 @@ export class Pictures {
       const key = `${piece.path}#${from}@${pixels}|${dark}|${file.stat.mtime}|${terms.join(" ")}`;
       let made = this.made.get(key);
       if (!made) {
-        made = drawPage(this.app, file, piece.kind, pixels, from, terms).catch(() => null);
+        const kind = piece.kind;
+        made = this.lane.run(pixels, () => drawPage(this.app, file, kind, pixels, from, terms)).catch(() => null);
         this.made.set(key, made);
         this.trim();
       }
@@ -81,7 +84,8 @@ export class Pictures {
     const key = `${piece.path}#${piece.loc ?? (piece.kind === "pdf" ? 1 : 0)}@${pixels}|${file.stat.mtime}|${file.stat.size}`;
     let made = this.made.get(key);
     if (!made) {
-      made = (piece.kind === "pdf" ? this.page(piece.path, piece.loc ?? 1, pixels) : this.still(piece.path, piece.loc ?? 0, pixels))
+      const loc = piece.loc;
+      made = this.lane.run(pixels, () => piece.kind === "pdf" ? this.page(piece.path, loc ?? 1, pixels) : this.still(piece.path, loc ?? 0, pixels))
         .catch(() => null);
       this.made.set(key, made);
       this.trim();
@@ -145,6 +149,7 @@ export class Pictures {
 
   clear(): void {
     this.abort.abort(); this.abort = new AbortController();
+    this.lane.clear();
     for (const made of this.made.values()) void made.then((url) => url && URL.revokeObjectURL(url));
     this.made.clear();
   }
