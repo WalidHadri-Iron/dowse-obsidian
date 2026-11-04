@@ -230,6 +230,25 @@ test("the time left, from the speed of each kind so far", async () => {
   assert.equal(indexer.estimate([row("g.pdf", "pdf", 10)]), 2, "a kind not read yet: the files' mean");
 });
 
+test("the first file read after starting carries the model's start: it isn't learnt from", async () => {
+  const notes = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`n${i}.md`, `Note ${i} about tea and coffee.`]));
+  const { indexer, fake } = await setup(notes);
+  let calls = 0;
+  const embed = fake.embed;
+  (indexer as any).options.embed = async () => {
+    const embedder = await embed();
+    return { ...embedder, texts: async (texts: string[]) => {
+      if (calls++ === 0) await new Promise((r) => setTimeout(r, 300));   // the model starting
+      return embedder.texts(texts);
+    } };
+  };
+  await indexer.sync();
+  await readAll(indexer);
+  const notesSpeed = (indexer as any).speed.get("note");
+  assert.equal(notesSpeed.files, 5, "six read, the first not timed");
+  assert.ok(notesSpeed.seconds < 0.25, `the start's 0.3 s isn't in the speed (${notesSpeed.seconds.toFixed(3)} s)`);
+});
+
 test("adding PDF scans renders and saves one page at a time, then resumes without duplicating saved pages", async () => {
   const { store, source, indexer, parts } = await setup({ "Scans.pdf": Array.from({ length: 75 }, () => "scan").join("\f") });
   await indexer.sync(); await readAll(indexer);

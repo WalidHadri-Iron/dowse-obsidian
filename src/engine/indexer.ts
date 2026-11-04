@@ -90,6 +90,9 @@ export class Indexer {
   private stopped = false;
   private waited = 0;   // ms of the file being read spent waiting (for you, for the model): not reading
   private speed = new Map<Kind, { seconds: number; bytes: number; files: number }>();
+  // The first file read after starting or resting carries the model's start (loaded, its GPU shaders compiled): timed
+  // with the rest, it made a vault read in 8 minutes say "about 1 h 9 min left" at first. It isn't learnt from.
+  private warming = true;
 
   private store: Store;
   private source: Source;
@@ -217,6 +220,7 @@ export class Indexer {
     this.stopped = false;
     this.waitingRows = null;
     this.abort = new AbortController();
+    this.warming = true;
     try {
       while (!this.stopped) {
         const version = this.version;
@@ -227,6 +231,7 @@ export class Indexer {
           this.report({ state: "idle", current: undefined, held: undefined, left: null });
           for (const settled of this.settledWaiters.splice(0)) settled();
           await this.sleep(undefined, version);
+          this.warming = true;   // (the model may have been let go while nothing waited)
           continue;
         }
         this.report({ state: "reading", current: next.path, left: this.estimate(waiting), held: undefined });
@@ -242,9 +247,11 @@ export class Indexer {
           if (!(error instanceof ModelMissing)) throw error;
           this.report({ state: "paused", held: "the model couldn't start" });   // tried again later, or when asked
           await this.sleep(RETRY_MS);
+          this.warming = true;
           continue;
         }
-        this.learn(next, (performance.now() - started - this.waited) / 1000);
+        if (this.warming) this.warming = false;
+        else this.learn(next, (performance.now() - started - this.waited) / 1000);
         this.report({ done: this.status.done + 1 });
       }
     } finally {
