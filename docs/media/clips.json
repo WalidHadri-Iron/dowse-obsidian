@@ -1,36 +1,36 @@
 {
-  "source": "dowse-obsidian-demo-smooth-fisheye.mp4",
+  "source": "dowse-publication.mp4",
   "width": 960,
   "fps": 20,
   "clips": [
     {
       "name": "visual-search",
       "start": 0,
-      "end": 6.2,
+      "end": 5.808,
       "description": "Describe a payment-system diagram, find Board 07, and open the original image."
     },
     {
       "name": "lecture-search",
-      "start": 7.5,
-      "end": 14.7,
+      "start": 7.115,
+      "end": 12.122,
       "description": "Find a duplicate-payment explanation inside a lecture and open its approximate 1:00 passage."
     },
     {
       "name": "multilingual-search",
-      "start": 16.12,
-      "end": 30.12,
+      "start": 13.276,
+      "end": 25.492,
       "description": "Type equivalent questions in English, French, Arabic, Spanish and Japanese in the fisheye gallery."
     },
     {
       "name": "explore",
-      "start": 30.12,
-      "end": 37.95,
+      "start": 25.492,
+      "end": 31.932,
       "description": "Switch to Explore, see content groups and search for Lisbon trip."
     },
     {
       "name": "related-files",
-      "start": 41.5,
-      "end": 44.15,
+      "start": 33.133,
+      "end": 36.068,
       "description": "Find files related to the open note and insert another link from the sidebar."
     }
   ]

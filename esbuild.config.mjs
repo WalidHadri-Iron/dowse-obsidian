@@ -39,6 +39,7 @@ const glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf
 
 const worker = await esbuild.build({
   entryPoints: ["src/engine/worker.ts"],
+  metafile: true,
   bundle: true,
   format: "esm",
   platform: "browser",
@@ -48,7 +49,7 @@ const worker = await esbuild.build({
   logLevel: "warning",
 });
 const searchWorker = await esbuild.build({
-  entryPoints: ["src/engine/search/worker.ts"], bundle: true, format: "esm", platform: "browser", target: "es2022",
+  entryPoints: ["src/engine/search/worker.ts"], metafile: true, bundle: true, format: "esm", platform: "browser", target: "es2022",
   minify: production, write: false, logLevel: "warning",
 });
 
@@ -69,7 +70,8 @@ const inlined = {
   },
 };
 
-await esbuild.build({
+const main = await esbuild.build({
+  metafile: true,
   entryPoints: ["src/main.ts"],
   bundle: true,
   format: "cjs",
@@ -91,3 +93,7 @@ await esbuild.build({
 writeFileSync("styles.css", readFileSync("src/styles.css", "utf8") +
   (existsSync("main.css") ? "\n/* The components' styles */\n" + readFileSync("main.css", "utf8") : ""));
 rmSync("main.css", { force: true });
+
+// Retain the exact module inventory for third-party notice generation (not shipped as runtime code).
+mkdirSync(".cache", { recursive: true });
+writeFileSync(".cache/bundle-inputs.json", JSON.stringify([...new Set([worker, searchWorker, main].flatMap(build => Object.keys(build.metafile.inputs)))], null, 2));

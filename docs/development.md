@@ -35,10 +35,13 @@ The packager creates:
 
 | Output | Purpose |
 | --- | --- |
-| `build/dowse/` | Plugin files, README and license for manual installation. |
+| `build/dowse/` | Plugin files, README, license and bundled third-party notices. |
 | `build/dowse-obsidian-<version>.zip` | ZIP containing the ready-to-copy `dowse/` folder. |
 | `build/SHA256SUMS` | Checksums of the archive and packaged files. |
 | `build/release.json` | Version, source commit and checksums. |
+
+The archive includes `THIRD_PARTY_NOTICES.md` and `licenses/`. Packaged README
+links point to the source revision so guides and demos work outside a checkout.
 
 The package is made from the current working tree. Commit metadata records HEAD;
 it does not prove the working tree was clean. Review changes and build the exact
@@ -128,6 +131,13 @@ On headless Linux, prefix commands with `xvfb-run -a`. For example:
 OBSIDIAN_EXECUTABLE=/path/to/obsidian xvfb-run -a npm run smoke
 ```
 
+Set `DOWSE_PLUGIN_DIR` to an unpacked release's `dowse/` folder to test those
+exact files instead of the repository build. For example, after extracting the ZIP:
+
+```sh
+DOWSE_PLUGIN_DIR=/path/to/unpacked/dowse OBSIDIAN_EXECUTABLE=/path/to/Obsidian npm run smoke
+```
+
 Smoke artifacts go to `.cache/smoke/` or `DOWSE_SMOKE_ARTIFACTS`. Native model and
 stress results go to `.cache/release-validation/<test>-<platform>/`. The harnesses
 close their own profiles. Use `DOWSE_KEEP_PROFILE=1` to retain a failed profile for
@@ -204,7 +214,7 @@ The focused GIFs come from the approved continuous demo video. Timings and expor
 settings are in [`docs/media/clips.json`](media/clips.json). Re-export them with:
 
 ```sh
-python3 scripts/make-readme-gifs.py /path/to/dowse-obsidian-demo-smooth-fisheye.mp4
+python3 scripts/make-readme-gifs.py /path/to/dowse-publication.mp4
 ```
 
 This requires ffmpeg. The large source recording, local vault and model cache are

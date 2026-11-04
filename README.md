@@ -28,7 +28,7 @@ when their filenames give you little to go on.
 
 ### Find the explanation inside a recording
 
-Ask **“how do we prevent duplicate payments when a request is retried”**. Dowse
+Choose **Recordings** and ask **“how do we prevent duplicate payments when a request is retried”**. Dowse
 finds the lecture and offers **Matching moments**. Click a passage to open the
 recording near the explanation—in this example, around **1:00**.
 
@@ -63,10 +63,11 @@ approximate; results depend on the contents of your vault. [About the demos](doc
 
 ## Install
 
-Dowse is currently an early preview, installed manually. **A public download has
-not been published yet.** Until a package is available on the
-[Releases page](https://github.com/WalidHadri-Iron/dowse-obsidian/releases), use a
-provided preview build or [build from this repository](docs/development.md#build-and-package).
+Dowse is currently an early preview, installed manually.
+**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/v0.1.0-rc.1/dowse-obsidian-0.1.0.zip)**,
+then unzip it. It contains a `dowse/` folder ready to copy into your vault.
+[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/v0.1.0-rc.1)
+are available with the preview. You can also [build from this repository](docs/development.md#build-and-package).
 
 1. Start with a separate test vault.
 2. Put `main.js`, `manifest.json` and `styles.css` together in this folder:
@@ -192,3 +193,6 @@ Plugin code is available under the [MIT license](LICENSE). Model weights are
 downloaded separately; see the
 [upstream model repository](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX)
 for its terms.
+
+Bundled dependency notices are included in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+and the release archive.

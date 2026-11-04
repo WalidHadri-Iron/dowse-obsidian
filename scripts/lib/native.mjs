@@ -21,13 +21,15 @@ export async function native(label, prepare = async () => {}, { protocolTimeout 
   const profile = join(root, "profile"), vault = join(root, "vault"), plugin = join(vault, ".obsidian/plugins/dowse");
   const artifacts = resolve(process.env.DOWSE_ARTIFACTS ?? join(repo, ".cache/release-validation", `${label}-${process.platform}`));
   await mkdir(plugin, { recursive: true }); await mkdir(profile); await mkdir(artifacts, { recursive: true });
-  for (const file of ["main.js", "manifest.json", "styles.css"]) await copyFile(join(repo, file), join(plugin, file));
+  const pluginSource = resolve(process.env.DOWSE_PLUGIN_DIR ?? repo);
+  for (const file of ["main.js", "manifest.json", "styles.css"]) await copyFile(join(pluginSource, file), join(plugin, file));
   await writeFile(join(vault, ".obsidian/community-plugins.json"), '[]');
   await writeFile(join(plugin, "data.json"), JSON.stringify({ on: false, off: [], images: false, sound: false, batteryPause: false }));
   await writeFile(join(profile, "obsidian.json"), JSON.stringify({ vaults: { dowseTest: { path: vault, ts: Date.now(), open: true } } }));
   await prepare(vault);
   const child = spawn(executable, [`--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-sandbox",
     "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
+    ...(process.platform === "win32" ? ["--disable-backgrounding-occluded-windows", "--disable-features=CalculateNativeWinOcclusion"] : []),
     ...(process.env.DOWSE_NATIVE_SOFTWARE === "1" ? ["--disable-gpu"] : []),
     ...(process.env.DOWSE_TEST_SWIFTSHADER === "1" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [])], {
     stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32",
@@ -36,8 +38,12 @@ export async function native(label, prepare = async () => {}, { protocolTimeout 
   child.stderr?.on("data", bytes => { stderr += bytes.toString(); });
   const errors = [], consoleErrors = [];
   const close = async () => {
+    // The launcher may hand off to another process. Close this connected test browser before PID fallback.
+    await Promise.race([browser?.close().catch(() => {}), delay(2000)]);
     browser?.disconnect();
-    if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      // Never act on a launcher PID that has exited and could have been reused.
+    } else if (process.platform === "win32") {
       try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
     } else {
       try { process.kill(-child.pid, "SIGTERM"); } catch {}

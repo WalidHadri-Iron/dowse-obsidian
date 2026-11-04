@@ -2,7 +2,7 @@
 
 [Back to the main README](../../README.md)
 
-These five GIFs are focused excerpts from the approved 47.2-second continuous
+These five GIFs are focused excerpts from the approved 39.1-second continuous
 Dowse for Obsidian demo. They show actual Obsidian interactions, native result
 animations and real-model searches in a dedicated demo vault.
 
@@ -16,10 +16,12 @@ animations and real-model searches in a dedicated demo vault.
 
 The diagram `Board 07` was created for the demo. The lecture is a synthetic
 distributed-systems teaching recording made with local Windows speech synthesis.
-The vault contains fictional notes and other demo material. Background thumbnails
-also include images from the existing demo library, which uses Wikimedia Commons
-media; upstream media retain their original terms. The plugin's MIT license
-applies to its code.
+The vault contains 85 original synthetic notes, diagrams, Canvas cards and drawing
+fixtures. All visible collection thumbnails in these current GIFs come from that
+original-content vault; no downloaded photographs or third-party video frames are
+used. The lecture example selects Recordings; visual examples select Images.
+Original-content generation and recording were performed for this project.
+
 
 Selected examples illustrate capabilities, not a retrieval benchmark. Passage
 ranges are approximate. The source video uses a modest constant speed increase;
