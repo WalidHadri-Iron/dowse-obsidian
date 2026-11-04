@@ -35,7 +35,23 @@ if (!existsSync(packed)) {
   writeFileSync(packed, execFileSync(command, args, { input: runtime, maxBuffer: 1 << 30 }));
 }
 const wasm = readFileSync(packed).toString("base64");
-const glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf8");
+// The runtime's loader also runs under Node, where it loads fs, path, url, util, os and worker_threads. In Obsidian its
+// Node test is false (web-only.ts takes `process` away), so those branches never run; they're taken out here, and the
+// test made false outright, so the plugin holds no file or system access it doesn't use (Obsidian's review reported
+// "Direct Filesystem Access" for them). Each is checked to be there once: a runtime that changes them stops the build.
+const NODE_ONLY = [
+  ['m=globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type', "m=!1"],
+  ['var isNode=globalThis.process?.versions?.node&&globalThis.process?.type!="renderer"', "var isNode=!1"],
+  ['const {createRequire:a}=await import("module");var require=a(import.meta.url),ca=require("worker_threads");', "var ca={};"],
+  ['(await import("worker_threads")).workerData', "(void 0)"],
+  ...["fs", "path", "url", "util", "os"].map((name) => [`require("${name}")`, "(void 0)"]),
+];
+let glue = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.mjs"), "utf8");
+for (const [node, web] of NODE_ONLY) {
+  const count = glue.split(node).length - 1;
+  if (count !== 1) throw new Error(`the ONNX runtime's loader has ${count} of ${node}, not 1: check NODE_ONLY against it`);
+  glue = glue.replace(node, web);
+}
 
 const worker = await esbuild.build({
   entryPoints: ["src/engine/worker.ts"],
@@ -93,6 +109,12 @@ const main = await esbuild.build({
   outfile: "main.js",
   logLevel: "info",
 });
+
+// No Node module the plugin doesn't use: Obsidian's own (obsidian, electron) and child_process (the Windows graphics
+// preference, graphics.ts) only
+const built = readFileSync("main.js", "utf8");
+const unused = [...built.matchAll(/require\("(fs|path|url|util|os|worker_threads|module)"\)|import\("(module|worker_threads)"\)/g)];
+if (unused.length) throw new Error(`main.js still loads ${[...new Set(unused.map((m) => m[0]))].join(", ")}`);
 
 // styles.css, the one stylesheet Obsidian loads: the tokens and layout (src/styles.css), then the components' own
 writeFileSync("styles.css", readFileSync("src/styles.css", "utf8") +
