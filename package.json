@@ -1,6 +1,6 @@
 {
   "name": "dowse-obsidian",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Find anything in your vault by what's in it: notes, PDFs, images, recordings and videos, searched by meaning, on your computer.",
   "private": true,
   "type": "module",

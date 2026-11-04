@@ -205,9 +205,12 @@ automatic model selection without forcing software rendering. GPU availability
 depends on the runner. A configured job is not evidence that a particular revision
 passed: inspect its run and saved artifacts before distributing that revision.
 
-For a release, align the manifest/package/version map, run the appropriate checks,
-build, package, and review the ZIP/checksums against the intended source commit.
-Repository visibility and publishing a release are separate actions.
+For a release, align `manifest.json`, `package.json`, the lockfile and `versions.json`,
+write `RELEASE_NOTES.md`, then push a tag equal to the version (`0.1.3`, no `v`).
+[`Release`](../.github/workflows/release.yml) checks the versions, runs lint, types,
+tests and the build, attests the provenance of `main.js`, `manifest.json` and
+`styles.css`, and drafts the GitHub release with those three files. Review the draft,
+then publish it; publishing is a separate, deliberate action.
 
 ## Update the README demonstrations
 

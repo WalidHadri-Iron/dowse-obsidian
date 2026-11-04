@@ -9,10 +9,12 @@ from the owner's Obsidian account at <https://community.obsidian.md>.
 - Plugin ID: `dowse`; name: `Dowse`; author: `Walid Hadri`.
 - Minimum app version: **1.15.0**, matching the native test runtime. A recent
   installer is also needed for the embedded inference runtime.
-- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.2`),
+- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.3`),
   without a `v` prefix. A version such as `0.1.0` is valid; 1.0 is not required.
-- Attach **main.js**, **manifest.json**, and **styles.css** directly to that release.
-  The ZIP, checksums, notices and validation report can also be attached.
+- The release holds only **main.js**, **manifest.json** and **styles.css**: the
+  directory recommends no other files (Obsidian downloads only these three).
+- The release is built by the `Release` workflow from the tagged commit, with build
+  provenance attestations for those three files (the directory recommends them).
 - `main.js` embeds Dowse's license and bundled dependency notices because the
   community installer downloads only those three runtime files.
 - Keep `manifest.json`, `package.json`, the lockfile and `versions.json` in sync.
@@ -20,10 +22,12 @@ from the owner's Obsidian account at <https://community.obsidian.md>.
 
 ## Before publishing a release
 
-Run `npm ci`, `npm run lint`, `npm run check`, `npm test`, `npm run build`, then
-`python3 scripts/package.py`. Check that the release identifies the committed
-source revision. Complete the main CI and extended native workflows on that
-revision. The latter includes the settings enable/disable and processor-choice
+Complete the main CI and extended native workflows on the revision to release, then
+push its version tag: the `Release` workflow runs lint, types, tests and the build,
+attests the files and drafts the release. Review the draft, publish it, then use
+**Check for new releases** on the directory listing.
+`python3 scripts/package.py` still builds a ZIP for testing by hand; it isn't
+attached to releases. The latter includes the settings enable/disable and processor-choice
 regression check in addition to mixed readers, views and Excalidraw coverage.
 
 The official Obsidian ESLint configuration checks production and development
@@ -33,6 +37,10 @@ unit tests supply a minimal worker timer host. Worker bootstrap uses `self`.
 No rules exclude these modules or suppress their timer/platform checks.
 The pinned ONNX runtime's `powerPreference` property currently produces one
 reported deprecation warning; it still controls the runtime's GPU selection.
+The build takes the ONNX runtime loader's unused Node.js branches out of `main.js`
+(no `fs`, `path`, `url`, `util`, `os` or `worker_threads`) and fails if one remains.
+The directory's behaviour scan still reports `child_process`: the Windows graphics
+preference (opt-in, disclosed in the README) runs `reg` through it.
 No rule suppresses that warning. The lint dependencies are development-only;
 `npm audit --omit=dev` checks the distributed dependency tree separately.
 

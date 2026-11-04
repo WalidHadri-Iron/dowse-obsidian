@@ -1,0 +1,44 @@
+# A version tag (0.1.3, no "v": Obsidian's rule) builds the release here, attests where its files came from, and drafts
+# the GitHub release with the three files Obsidian installs. Publishing the draft stays a person's decision.
+name: Release
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+permissions:
+  contents: write       # the draft release
+  id-token: write       # the attestation's signing identity
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: The tag is the manifest's version, and the versions agree
+        run: |
+          node -e '
+            const read = (f) => JSON.parse(require("fs").readFileSync(f, "utf8"));
+            const tag = process.env.GITHUB_REF_NAME, manifest = read("manifest.json");
+            if (manifest.version !== tag) throw new Error(`tag ${tag}, manifest ${manifest.version}`);
+            if (read("package.json").version !== tag) throw new Error("package.json differs");
+            if (read("versions.json")[tag] !== manifest.minAppVersion) throw new Error("versions.json differs");'
+      - run: npm run lint
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+      - name: Draft the release with the files Obsidian installs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --draft --verify-tag \
+            --title "Dowse $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
