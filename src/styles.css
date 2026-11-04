@@ -200,3 +200,8 @@
   border-radius: var(--radius-m); background: var(--background-secondary); }
 .dowse-settings-status { flex: 1; margin: 0; }
 .dowse-status { cursor: pointer; }
+
+/* Projected labels retain layout while hidden; cursor state is themeable. */
+.dowse-visible { opacity: 1 !important; }
+.dowse-pointer { cursor: pointer !important; }
+.dowse-settings-content { display: block; border: 0; padding: 0; }

@@ -2,7 +2,7 @@
 // how far reading is (pausing it), and the room Dowse takes on this computer (the model can be
 // removed: it stays in Obsidian's cache otherwise, even once the plugin is gone).
 
-import { type App, type ButtonComponent, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, type ButtonComponent, type SettingDefinitionItem, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DowsePlugin from "../main.ts";
 import { kindOf } from "../engine/reading/types.ts";
 import { prefer, preferred, situation } from "./graphics.ts";
@@ -22,7 +22,7 @@ function twice(button: ButtonComponent, label: string, cost: () => string, run: 
   button.buttonEl.setAttr("aria-live", "polite");
   button.onClick(async () => {
     if (!armed) {
-      button.setButtonText(cost()).setWarning();
+      button.setButtonText(cost()).setDestructive();
       armed = window.setTimeout(() => { armed = 0; reset(); }, 8000);
       return;
     }
@@ -36,14 +36,28 @@ function twice(button: ButtonComponent, label: string, cost: () => string, run: 
 export class DowseSettingTab extends PluginSettingTab {
   private plugin: DowsePlugin;
   private unsubscribe: (() => void) | null = null;
+  private pending = 0;
 
   constructor(app: App, plugin: DowsePlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  display(): void {
-    const { containerEl } = this;
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [{
+      name: "Vault search",
+      desc: "Local search, model downloads, indexing and storage.",
+      aliases: ["Dowse", "processor", "GPU", "images", "recordings", "pause", "battery", "rebuild", "remove model"],
+      render: setting => {
+        const el = setting.settingEl;
+        el.addClass("dowse-settings-content");
+        this.renderContent(el);
+        return () => this.hide();
+      },
+    }];
+  }
+
+  private renderContent(containerEl: HTMLElement): void {
     containerEl.empty();
     containerEl.addClass("dowse-settings");
     this.unsubscribe?.();
@@ -52,14 +66,17 @@ export class DowseSettingTab extends PluginSettingTab {
     if (problem) { containerEl.createEl("p", { text: problem, attr: { role: "alert" } }); return; }
     if (!this.plugin.settings.on) return this.offView(containerEl);
     this.onView(containerEl);
-    let pending = 0;
     this.unsubscribe = this.plugin.engine?.onChange(() => {   // live, without redrawing on every passage
-      if (pending) return;
-      pending = window.setTimeout(() => { pending = 0; this.refreshStatus(); }, 500);
+      if (this.pending) return;
+      this.pending = window.setTimeout(() => { this.pending = 0; this.refreshStatus(); }, 500);
     }) ?? null;
   }
 
   hide(): void {
+    window.clearTimeout(this.pending);
+    this.pending = 0;
+    this.statusEl = this.retryEl = null;
+    this.indexEl = this.modelEl = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
   }
@@ -73,7 +90,7 @@ export class DowseSettingTab extends PluginSettingTab {
     new Setting(el).setName("Search this vault with Dowse").addButton((button) => button
       .setButtonText("Turn on").setCta().onClick(async () => {
         await this.plugin.turnOn();
-        this.display();
+        this.update();
       }));
     this.removeSetting(el);
   }
@@ -176,18 +193,18 @@ export class DowseSettingTab extends PluginSettingTab {
       .addButton((button) => twice(button, "Read again", () => `Click again to read ${this.files()} again`, async () => {
         await this.plugin.turnOff(true);
         await this.plugin.turnOn();
-        this.display();
+        this.update();
       }));
     new Setting(el).setName("Turn Dowse off for this vault")
       .setDesc("Stops reading. Keep the index to turn it back on instantly, or delete it. Your notes are never touched.")
       .addButton((button) => button.setButtonText("Turn off, keep the index").onClick(async () => {
         await this.plugin.turnOff(false);
-        this.display();
+        this.update();
       }))
       .addButton((button) => twice(button, "Turn off and delete", () => "Click again to delete the index",
         async () => {
           await this.plugin.turnOff(true);
-          this.display();
+          this.update();
         }));
   }
 
@@ -214,7 +231,7 @@ export class DowseSettingTab extends PluginSettingTab {
         button.setButtonText("Removing…");
         const freed = await this.plugin.removeModel();
         new Notice(freed ? `Dowse's model removed: ${sizeText(freed)} freed.` : "Dowse's model wasn't on this computer.");
-        this.display();
+        this.update();
       }));
   }
 

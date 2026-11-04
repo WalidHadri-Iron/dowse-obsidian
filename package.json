@@ -1,6 +1,6 @@
 {
   "name": "dowse-obsidian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Find anything in your vault by what's in it: notes, PDFs, images, recordings and videos, searched by meaning, on your computer.",
   "private": true,
   "type": "module",
@@ -14,7 +14,9 @@
     "test:native-model": "node scripts/native-model.mjs",
     "test:vault": "node scripts/vault-stress.mjs",
     "test:media": "node scripts/media-accuracy.mjs",
-    "test:views": "node scripts/native-views.mjs"
+    "test:views": "node scripts/native-views.mjs",
+    "lint": "eslint .",
+    "test:settings": "node scripts/native-settings.mjs"
   },
   "license": "MIT",
   "devDependencies": {
@@ -23,16 +25,25 @@
     "@types/three": "0.186.0",
     "esbuild": "0.25.12",
     "esbuild-svelte": "0.9.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-obsidianmd": "0.4.2",
+    "eslint-plugin-svelte": "3.24.0",
     "fake-indexeddb": "6.2.5",
     "obsidian": "1.14.4",
     "puppeteer-core": "25.16.0",
     "svelte-check": "4.7.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1"
   },
   "dependencies": {
     "stemmer": "2.0.1",
     "svelte": "5.57.2",
     "three": "0.186.1",
     "xz-decompress": "0.2.3"
+  },
+  "overrides": {
+    "eslint-plugin-obsidianmd": {
+      "obsidian": "$obsidian"
+    }
   }
 }

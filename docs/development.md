@@ -21,6 +21,7 @@ profiles and vaults; they do not attach to your open user vault.
 git clone https://github.com/WalidHadri-Iron/dowse-obsidian.git
 cd dowse-obsidian
 npm ci
+npm run lint
 npm run check
 npm test
 npm run build
@@ -220,3 +221,7 @@ python3 scripts/make-readme-gifs.py /path/to/dowse-publication.mp4
 This requires ffmpeg. The large source recording, local vault and model cache are
 not committed. Do not substitute invented search results. Update the timing plan
 when changing the source video and check the resulting GIFs before committing them.
+
+## Community submission
+
+See [the submission checklist](community-submission.md) for release assets, the directory form and review steps.

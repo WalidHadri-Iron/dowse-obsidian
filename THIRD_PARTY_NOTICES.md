@@ -2,7 +2,8 @@
 
 Dowse's own code is MIT-licensed. The following software is included in the
 production plugin bundle. Its original terms and copyright notices remain in
-[`licenses/`](licenses/), which is included with release packages.
+[`licenses/`](licenses/), which is included with release packages. The build also embeds these texts in
+`main.js` so installations through Obsidian retain them.
 
 | Component | Version | License / notice |
 | --- | --- | --- |

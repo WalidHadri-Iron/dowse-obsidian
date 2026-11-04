@@ -202,6 +202,11 @@ export default class DowsePlugin extends Plugin {
   private makeController(): Controller {
     const empty = { query: "", hits: [], strong: 0, terms: [], meaning: false, ms: 0 };
     return {
+      loadPreference: (key, fallback) => {
+        try { const value: unknown = this.app.loadLocalStorage(key); return typeof value === "string" ? value : fallback; }
+        catch { return fallback; }
+      },
+      savePreference: (key, value) => { try { this.app.saveLocalStorage(key, value); } catch { /* unavailable storage */ } },
       on: () => this.settings.on && this.engine !== null,
       active: path => this.settings.on && !!kindOf(path) && isOn(this.settings, path) && !!this.app.vault.getFileByPath(path),
       selection: () => this.selection,

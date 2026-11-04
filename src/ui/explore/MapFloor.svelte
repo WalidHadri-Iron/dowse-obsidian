@@ -1,33 +1,10 @@
-<script lang="ts" module>
-  export interface MapPiece {
-    path: string;
-    kind: string;
-    name: string;
-    folder: string;
-    visual: boolean;
-    version?: number;   // modification time: refresh edited previews without discarding other files' textures
-    aisle: number;
-    x: number;
-    y: number;
-  }
-  export interface MapAisle {
-    index: number;
-    label: string;
-    count: number;
-    x: number;
-    y: number;
-    radius: number;
-    id?: string;        // "auto-<n>", or "rest"
-    about?: string;
-  }
-</script>
-
 <script lang="ts">
   // Dowse's Explore floor, in an Obsidian tab. The storehouse floor seen from above the racks: every file a small glass case, standing in the aisle of the
   // files it's like, each aisle under its sign. Wheel to come closer (toward the pointer), drag to walk; a sign takes
   // you to its aisle. A search pulls green matching cases forward; red context cases soften. Pictures load
   // only for the cases close enough to be seen, and nothing is drawn while nothing moves.
 
+  import type { MapPiece, MapAisle } from "./map-types.ts";
   import { onMount, untrack } from "svelte";
   import * as THREE from "three";
   import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -192,12 +169,12 @@
       const top = tops.get(aisle.index);
       if (top) top.x = aisle.x;
     }
-    signLayer.innerHTML = "";
+    signLayer.replaceChildren();
     signs = aisles.map((aisle) => {
-      const sign = document.createElement("button");
+      const sign = createEl("button");
       sign.className = "aisle-sign";
       sign.dataset.groupId = aisle.id ?? String(aisle.index);
-      sign.innerHTML = `<b></b><span></span>`;
+      sign.createEl("b"); sign.createSpan();
       sign.querySelector("b")!.textContent = aisle.id === "rest" ? "Unsorted" : aisle.label;   // (not "Everything else": the legend's)
       sign.querySelector("span")!.textContent = `${aisle.count.toLocaleString()} file${aisle.count === 1 ? "" : "s"}`;
       sign.title = aisle.about || aisle.label;
@@ -234,7 +211,7 @@
       const numbered = rank !== undefined && (state === "match" || (!clear && rank < 5));
       if (!numbered) { badge?.remove(); badges.delete(c.piece.path); continue; }
       if (!badge) {
-        badge = document.createElement("button"); badge.className = "rank-badge";
+        badge = createEl("button"); badge.className = "rank-badge";
         badge.dataset.path = c.piece.path;
         badge.onclick = event => { event.stopPropagation(); onselect(c.piece); focusResult(c.piece.path); };
         rankLayer.append(badge); badges.set(c.piece.path, badge);
@@ -249,7 +226,7 @@
     for (const [path, badge] of badges) {
       if (!found?.has(path) || !byPath.has(path)) { badge.remove(); badges.delete(path); }
     }
-    if (hovered && caseRelevance(hovered.piece.path) === "other") { hovered = null; host.style.cursor = "grab"; }
+    if (hovered && caseRelevance(hovered.piece.path) === "other") { hovered = null; host.classList.remove("dowse-pointer"); }
     host.dataset.contextLight = found ? ".35" : "1";
     host.dataset.contextFade = found ? ".45" : "0";
     wake();
@@ -365,7 +342,7 @@
     trimTextures(visible);
   }
 
-  function wake(): void { if (!frame) frame = requestAnimationFrame(tick); }
+  function wake(): void { if (!frame) frame = window.requestAnimationFrame(tick); }
 
   function tick(): void {
     frame = 0;
@@ -459,19 +436,19 @@
     const shown = hovered ?? (selected ? byPath.get(selected) : null);
     if (shown) {
       v.set(-W / 2, -H / 2 - .04, .03).applyMatrix4(shown.group.matrixWorld).project(camera);
-      tag.style.opacity = "1";
+      tag.classList.add("dowse-visible");
       tag.dataset.relevance = caseRelevance(shown.piece.path);
       tag.dataset.size = shown.sTo.toFixed(4);
       tag.classList.toggle("selected", selected === shown.piece.path);
       tag.style.transform = `translate(${((v.x + 1) / 2) * width}px, ${((1 - v.y) / 2) * height}px)`;
       if (tag.dataset.path !== shown.piece.path) {
         tag.dataset.path = shown.piece.path;
-        tag.innerHTML = "<b></b><span></span>";
+        tag.replaceChildren(); tag.createEl("b"); tag.createSpan();
         tag.querySelector("b")!.textContent = shown.piece.name;
       }
       const rank = found?.get(shown.piece.path);
       tag.querySelector("span")!.textContent = `${rank === undefined ? "" : `#${rank + 1} · `}${shown.piece.folder}`;
-    } else tag.style.opacity = "0";
+    } else tag.classList.remove("dowse-visible");
   }
 
   /** The case under the pointer, by where each case rests: not by its lifted, grown shape. Judged by that shape, a
@@ -524,7 +501,7 @@
       return;
     }
     const over = caseAt(event);
-    if (over !== hovered) { hovered = over; host.style.cursor = over ? "pointer" : "grab"; wake(); }
+    if (over !== hovered) { hovered = over; host.classList.toggle("dowse-pointer", Boolean(over)); wake(); }
     if (over && onhover) onhover(event, over.piece, host);
   }
   function up(event: PointerEvent): void {
@@ -624,7 +601,7 @@
     glass = roundedFrame(W + 0.02, H + 0.02, 0.04, 0.022);
     glassMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, roughness: 0.05,
       metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.6, depthWrite: false });
-    tag = document.createElement("div");
+    tag = createDiv();
     tag.className = "case-tag";
     tagLayer.append(tag);
     const observer = new ResizeObserver(resize);
@@ -633,7 +610,7 @@
     build();
     return () => {
       disposed = true;
-      clearTimeout(scanTimer);
+      window.clearTimeout(scanTimer);
       cancelAnimationFrame(frame);
       observer.disconnect();
       for (const c of cases) { c.material.map?.dispose(); c.material.dispose(); c.outline.dispose(); }
@@ -661,7 +638,7 @@
   $effect(() => {   // another theme: the page's colors switch first
     void dark;
     if (!renderer) return;
-    const themed = requestAnimationFrame(() => {
+    const themed = window.requestAnimationFrame(() => {
       floor();
       for (const c of cases) {
         if (c.fallback && c.pixels) card(c, c.pixels);
@@ -681,7 +658,7 @@
     } else if (cameraMode === "aisle" && focusedAisle !== null) {
       fit = fitExplore(cases.filter(c => c.piece.aisle === focusedAisle).map(c => ({...c.piece, size:c.sTo})), camera.aspect, camera.fov, 1.0);
     } else if (cameraMode === "results" && found?.size) {
-      fit = fitExplore(cases.filter(c => found!.has(c.piece.path)).map(c => ({...c.piece, size:c.sTo})), camera.aspect, camera.fov, .75);
+      fit = fitExplore(cases.filter(c => found.has(c.piece.path)).map(c => ({...c.piece, size:c.sTo})), camera.aspect, camera.fov, .75);
     }
     if (fit) viewTo = fit;
     else { cameraMode = "all"; frameAll(); } // a hard filter may remove the focused file or aisle

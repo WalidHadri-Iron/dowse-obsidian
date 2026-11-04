@@ -8,7 +8,9 @@
   import Icon from "./wall/Icon.svelte";
   import ResultList from "./ResultList.svelte";
   import MediaMoments from "./MediaMoments.svelte";
-  import MapFloor, { type MapAisle, type MapPiece } from "./explore/MapFloor.svelte";
+  import MapFloor from "./explore/MapFloor.svelte";
+  import type { MapAisle, MapPiece } from "./explore/map-types.ts";
+  import type { Piece } from "./wall/piece.ts";
   import { rankedStep } from "./explore/explore-view.ts";
   import type { ExploreGrouping, ExploreMap } from "../engine/search/explore.ts";
   import { CLOSEST_LABEL } from "./wall/search-confidence.ts";
@@ -27,7 +29,7 @@
     ["all", "All", []], ["note", "Notes", ["note"]], ["pdf", "PDFs", ["pdf"]], ["canvas", "Canvases", ["canvas"]],
     ["image", "Images", ["image"]], ["audio", "Recordings", ["audio"]], ["video", "Videos", ["video"]],
   ];
-  const stored = (key: string, fallback: string) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
+  const stored = (key: string, fallback: string) => controller.loadPreference(key, fallback);
 
   // svelte-ignore state_referenced_locally
   let query = $state(initial);   // (the tab's first query: read once)
@@ -73,7 +75,7 @@
   let mapError = $state("");
   let mapAsked = 0;
   let chosen = $state<string | null>(null);   // the case picked on the floor
-  let floor = $state<MapFloor | null>(null);
+  let floor = $state<{ focusResult(path: string): void } | null>(null);
   let asked = 0;
   let timer = 0;
 
@@ -229,7 +231,7 @@
         if (layout === "map" && (!again || !found.hits.some(h => h.path === chosen)))
           chosen = found.hits.find(h => onFloor.has(h.path))?.path ?? null;
       }
-    } catch (e) {
+    } catch {
       if (mine === asked) error = "Search could not finish. Try again.";
     } finally {
       if (mine === asked) busy = false;
@@ -268,7 +270,7 @@
   function setGrouping(next: ExploreGrouping): void {
     if (next === grouping) return;
     grouping = next; map = null; mapError = ""; chosen = null;
-    try { localStorage.setItem("dowse-explore-grouping", next); } catch { /* private storage */ }
+    controller.savePreference("dowse-explore-grouping", next);
     void loadMap();
   }
 
@@ -287,7 +289,7 @@
   function setLayout(next: string): void {
     layout = next;
     if (next === "map") { if (searching && !ranked.some(h => h.path === chosen)) chosen = ranked[0]?.path ?? null; void loadMap(); }
-    try { localStorage.setItem("dowse-layout", next); } catch { /* private storage */ }
+    controller.savePreference("dowse-layout", next);
   }
 
   function folderChanged(path: string, checked: boolean): void {
@@ -497,13 +499,13 @@
         {:else if mapPieces.length}
           <MapFloor bind:this={floor} pieces={mapPieces} aisles={mapAisles} {found} {scores} {clear} {matches} {dark} {searchIntent}
                     selected={chosen}
-                    picture={(piece, px) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px,
+                    picture={(piece: MapPiece, px: number) => controller.picture(pieceOf(shownFor(piece.path), { strong: true }), px,
                                                                found?.has(piece.path) ? answer?.terms ?? [] : [])}
-                    onselect={(piece) => (chosen = piece.path)}
-                    onopen={(piece) => { if (!busy) controller.open(shownFor(piece.path), false); }}
-                    onhover={(event, piece, target) => controller.hover(event, piece.path, target)}
-                    ondragout={(piece, event) => dragLink(event, controller.link(piece.path), piece.name)}
-                    onstep={(step) => { const path = rankedStep(ranked.map((h) => h.path), chosen, step);
+                    onselect={(piece: MapPiece) => (chosen = piece.path)}
+                    onopen={(piece: MapPiece) => { if (!busy) controller.open(shownFor(piece.path), false); }}
+                    onhover={(event: MouseEvent, piece: MapPiece, target: HTMLElement) => controller.hover(event, piece.path, target)}
+                    ondragout={(piece: MapPiece, event: DragEvent) => dragLink(event, controller.link(piece.path), piece.name)}
+                    onstep={(step: 1 | -1) => { const path = rankedStep(ranked.map((h) => h.path), chosen, step);
                                         if (path) { chosen = path; floor?.focusResult(path); } }} />
           {#if searching && answer && rail.length}
             <!-- The floor's numbers, named: the first few results, as the badges number them -->
@@ -524,11 +526,11 @@
       {:else if layout === "wall" && pieces.length}
         <Wall {pieces} collectionKeys={latest.map((r) => r.path)} selected={searching && hits.length ? Math.min(selected, hits.length - 1) : -1}
               terms={answer?.terms ?? []} {searching} {clear} {dark}
-              picture={(piece, px, terms) => controller.picture(piece, px, terms)}
-              onselect={(i) => (selected = i)} onopen={(i) => { const item = shown[i]; if (item && !busy) controller.open(item, false); }}
-              ondragout={(i, event) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
+              picture={(piece: Piece, px: number, terms: string[]) => controller.picture(piece, px, terms)}
+              onselect={(i: number) => (selected = i)} onopen={(i: number) => { const item = shown[i]; if (item && !busy) controller.open(item, false); }}
+              ondragout={(i: number, event: DragEvent) => { const piece = pieces[i]; if (piece) dragLink(event, controller.link(piece.path), piece.name); else event.preventDefault(); }} />
       {:else if shown.length}
-        <ResultList items={shown} {selected} {controller} pending={busy} onselect={(i) => (selected = i)}
+        <ResultList items={shown} {selected} {controller} pending={busy} onselect={(i: number) => (selected = i)}
                     strong={searching && answer ? matchCount : null} id={listId}
                     more={searching && !more && hits.length > shown.length ? hits.length - shown.length : 0}
                     onmore={() => (more = true)} />

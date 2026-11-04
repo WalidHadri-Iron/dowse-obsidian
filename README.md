@@ -64,9 +64,9 @@ approximate; results depend on the contents of your vault. [About the demos](doc
 ## Install
 
 Dowse is currently an early preview, installed manually.
-**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/v0.1.0-rc.1/dowse-obsidian-0.1.0.zip)**,
+**[Download the preview ZIP](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/download/0.1.1/dowse-obsidian-0.1.1.zip)**,
 then unzip it. It contains a `dowse/` folder ready to copy into your vault.
-[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/v0.1.0-rc.1)
+[Release notes and checksums](https://github.com/WalidHadri-Iron/dowse-obsidian/releases/tag/0.1.1)
 are available with the preview. You can also [build from this repository](docs/development.md#build-and-package).
 
 1. Start with a separate test vault.
@@ -137,15 +137,18 @@ lists extensions and media restrictions.
 
 - **Local processing.** Your vault content is processed on your computer. The
   initial model download comes from Hugging Face; search works offline once the
-  selected model parts are cached.
+  selected model parts are cached. Vault content and queries are not sent to Hugging Face.
 - **Desktop Obsidian.** Windows, macOS and Linux are supported; mobile is not.
-  Obsidian 1.8+ also needs a recent installer/runtime. Dowse checks compatibility
+  Obsidian 1.15+ also needs a recent installer/runtime. Dowse checks compatibility
   and explains when an installer update is needed.
 - **GPU or processor.** Automatic mode uses WebGPU when available and falls back
   to the processor. You can choose the processor in **Settings → Dowse**.
 - **One-time downloads.** Text is about **542 MB**. Images add about **336 MB**;
   audio adds about **587 MB**. The local index needs additional space depending
   on your vault.
+- **Windows graphics preference.** If you explicitly change this option, Dowse reads
+  installed display-adapter information and updates Windows’ per-user GPU preference
+  for the Obsidian executable. This accesses the Windows registry outside the vault.
 - **Recording limits.** Audio content search currently accepts files up to
   **20 minutes and 32 MiB**, with a **128 MiB decoded-audio limit**. Split longer
   lectures into shorter files. Oversize recordings remain searchable by filename;
@@ -169,6 +172,7 @@ Windows can use Python's standard-library `lzma` support.
 git clone https://github.com/WalidHadri-Iron/dowse-obsidian.git
 cd dowse-obsidian
 npm ci
+npm run lint
 npm run check
 npm test
 npm run build
@@ -195,4 +199,5 @@ downloaded separately; see the
 for its terms.
 
 Bundled dependency notices are included in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-and the release archive.
+and the release archive. The same license texts are embedded in `main.js` so
+Obsidian’s three-file installer retains them.

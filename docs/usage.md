@@ -12,7 +12,7 @@ ribbon icon, or run **Dowse: Open the search tab** from Obsidian's command palet
 Choose whether to read pictures and sound, then **Turn on for this vault**. These
 options can be changed later under **Settings → Dowse**.
 
-Desktop Obsidian 1.8+ needs an installer/runtime with `Float16Array`, workers,
+Desktop Obsidian 1.15+ needs an installer/runtime with `Float16Array`, workers,
 OffscreenCanvas and IndexedDB. Dowse checks those capabilities before opening the
 index. If setup requests an installer update, follow the troubleshooting steps below.
 

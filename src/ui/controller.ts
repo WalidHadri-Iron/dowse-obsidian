@@ -20,6 +20,8 @@ export interface Reading {
 }
 
 export interface Controller {
+  loadPreference(key: string, fallback: string): string;
+  savePreference(key: string, value: string): void;
   /** Dowse is on for this vault (else the views offer to turn it on). */
   on(): boolean;
   active(path: string): boolean;

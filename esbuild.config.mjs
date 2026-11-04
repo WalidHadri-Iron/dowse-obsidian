@@ -7,7 +7,7 @@
 // `dev` adds the development hooks (src/dev): the reference measurement (Dowse's reference inputs and vectors, checked
 // inside Obsidian) and a test vault's requests (scripts/obsidian-run.mjs).
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -70,7 +70,12 @@ const inlined = {
   },
 };
 
+const noticeFiles = ["LICENSE", "THIRD_PARTY_NOTICES.md", ...readdirSync("licenses").sort().map(name => `licenses/${name}`)];
+const notices = noticeFiles.map(name => `===== ${name} =====\n${readFileSync(name, "utf8")}`).join("\n\n");
+const licenseBanner = `/*! Dowse and bundled software licenses\n${notices.replaceAll("*/", "* /")}\n*/`;
+
 const main = await esbuild.build({
+  banner: { js: licenseBanner },
   metafile: true,
   entryPoints: ["src/main.ts"],
   bundle: true,

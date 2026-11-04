@@ -94,11 +94,11 @@
          role="option" aria-selected={index === selected} aria-disabled={pending} tabindex={index === tabbable ? 0 : -1}
          aria-posinset={index + 1} aria-setsize={items.length}
          id={id ? `${id}-${index}` : undefined} draggable="true" ondragstart={(e) => drag(e, item)}
-         onmouseover={(e) => controller.hover(e, item.path, e.currentTarget as HTMLElement)}
+         onmouseover={(e) => controller.hover(e, item.path, e.currentTarget)}
          onfocus={() => { focusAt = index; onselect?.(index); }}
-         onclick={(e) => { if (!pending) { onselect?.(index); controller.open(item, e.ctrlKey || e.metaKey); } }}
-         onauxclick={(e) => { if (!pending && e.button === 1) controller.open(item, true); }}
-         onkeydown={(e) => { if (e.key === "Enter") { if (!pending) controller.open(item, e.ctrlKey || e.metaKey); } else step(e, index); }}>
+         onclick={(e) => { if (!pending) { onselect?.(index); void controller.open(item, e.ctrlKey || e.metaKey); } }}
+         onauxclick={(e) => { if (!pending && e.button === 1) void controller.open(item, true); }}
+         onkeydown={(e) => { if (e.key === "Enter") { if (!pending) void controller.open(item, e.ctrlKey || e.metaKey); } else void step(e, index); }}>
       <span class="dowse-result-icon"><Icon name={KIND_ICON[item.kind] ?? "file"} size={16} /></span>
       <div class="dowse-result-text">
         <div class="dowse-result-title">{#if close(index)}<span class="dowse-unseen">Less likely: </span>{/if}{titleOf(item)}</div>
@@ -118,5 +118,5 @@
   {/if}
 </div>
 {#if more && onmore}
-  <button class="dowse-more" onclick={onmore}>{more} less likely ›</button>
+  <button class="dowse-more" onclick={() => { void onmore?.(); }}>{more} less likely ›</button>
 {/if}

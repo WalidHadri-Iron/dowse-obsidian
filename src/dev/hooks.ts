@@ -41,7 +41,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
   const wanted = JSON.parse(await adapter.read("dowse-dev.json") || "{}") as { images?: boolean; sound?: boolean };
   if (wanted.images !== undefined || wanted.sound !== undefined) await plugin.setParts({ images: wanted.images, sound: wanted.sound });
   const early = wanted as { view?: string; layout?: string };
-  if (early.layout) window.localStorage.setItem("dowse-layout", early.layout);   // (before the tab is open)
+  if (early.layout) plugin.app.saveLocalStorage("dowse-layout", early.layout);   // (before the tab is open)
   if (early.view !== undefined) await plugin.openSearch(early.view);   // (open while the vault is read)
   if ((wanted as { settingsFirst?: boolean }).settingsFirst) plugin.openSettings();   // (open while the vault is read)
   if (!plugin.settings.on) await plugin.turnOn();
@@ -61,7 +61,7 @@ export async function run(plugin: DowsePlugin): Promise<void> {
                     hits: answer.hits.slice(0, 5).map((h) => ({ path: h.path, loc: h.loc, z: h.z, clear: h.clear,
                                                                 excerpt: h.excerpt, evidence: h.evidence })) });
   }
-  if (asked.layout) window.localStorage.setItem("dowse-layout", asked.layout);
+  if (asked.layout) plugin.app.saveLocalStorage("dowse-layout", asked.layout);
   if (asked.similar) {
     const file = plugin.app.vault.getFileByPath(asked.similar);
     if (file) await plugin.app.workspace.getLeaf(false).openFile(file);

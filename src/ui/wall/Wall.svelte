@@ -187,7 +187,7 @@
     rim.position.z = DEPTH / 2 + 0.006;
     group.add(picture, glass, rim);
     rack.add(group);
-    const tag = document.createElement("div");
+    const tag = createDiv();
     tag.className = "tag";
     tagLayer.append(tag);
     const start = { x: 0, y: 0, z: -2.4, s: 0.9, o: 0 };
@@ -321,7 +321,7 @@
   const glide = (t: number) => 1 - Math.pow(1 - t, 4);
 
   function wake(): void {
-    if (!disposed && shadersReady && active && !frame) frame = requestAnimationFrame(tick);
+    if (!disposed && shadersReady && active && !frame) frame = window.requestAnimationFrame(tick);
   }
 
   function tick(time: number): void {
@@ -396,7 +396,7 @@
     const width = host.clientWidth, height = host.clientHeight;
     order.forEach((vitrine, index) => {
       const tag = vitrine.tag;
-      if (vitrine.piece.back || vitrine.now.o < 0.5) { tag.style.opacity = "0"; return; }
+      if (vitrine.piece.back || vitrine.now.o < 0.5) { tag.classList.remove("dowse-visible"); return; }
       const w = CELL_W / 2, h = CELL_H / 2;
       v.set(-w + 0.1, -h + 0.1, DEPTH).applyMatrix4(vitrine.group.matrixWorld).project(camera);
       const x = ((v.x + 1) / 2) * width, y = ((1 - v.y) / 2) * height;
@@ -404,12 +404,12 @@
       const right = ((v.x + 1) / 2) * width, top = ((1 - v.y) / 2) * height;
       // At overview scale labels would cover the file and collide with neighbouring cases.
       // Zoom reveals accession tags; hovering still provides the full filename as a native tooltip.
-      if (right - x < 75) { tag.style.opacity = "0"; return; }
+      if (right - x < 75) { tag.classList.remove("dowse-visible"); return; }
       const full = right - x >= 110 && (index === hovered || index === selected
         || (vitrine.tag.dataset.layer === "foreground" && index < 6));
-      if (x < 4 || right > width - 4 || top < 0 || y > height) { tag.style.opacity = "0"; return; }   // half out: no tag
-      if (!full && !searching) { tag.style.opacity = "0"; return; }   // a number alone, before a search, would mean nothing
-      tag.style.opacity = "1";
+      if (x < 4 || right > width - 4 || top < 0 || y > height) { tag.classList.remove("dowse-visible"); return; }   // half out: no tag
+      if (!full && !searching) { tag.classList.remove("dowse-visible"); return; }   // a number alone, before a search, would mean nothing
+      tag.classList.add("dowse-visible");
       tag.style.maxWidth = `${Math.max(right - x - 12, 80)}px`;
       tag.style.transform = `translate(${x}px, ${y}px) translateY(-100%)`;
       // A high score can still project to a narrow case in a small window: keep its label legible.
@@ -422,13 +422,13 @@
       const key = `${vitrine.piece.key}|${index}|${text}|${searching}`;
       if (tag.dataset.key !== key) {
         tag.dataset.key = key;
-        tag.innerHTML = "";
-        const number = document.createElement("i");
+        tag.replaceChildren();
+        const number = createEl("i");
         number.textContent = String(index + 1);
         if (full) {
-          const name = document.createElement("b");
+          const name = createEl("b");
           name.textContent = vitrine.piece.name;
-          const line = document.createElement("span");
+          const line = createSpan();
           if (searching) line.append(number);   // (a search's rank; before one, no number)
           line.append(text);
           tag.append(name, line);
@@ -662,7 +662,7 @@
 
   /** A soft pool of light on the floor behind the rack: depth without a single drawn line. */
   function lightPool(): THREE.CanvasTexture {
-    const canvas = document.createElement("canvas");
+    const canvas = createEl("canvas");
     canvas.width = 512; canvas.height = 288;
     const g = canvas.getContext("2d")!;
     // The theme's own light: its text colour, faint, on a dark floor; white on a light one (`dark`: Obsidian's theme)
@@ -703,7 +703,7 @@
     if (!active) return;
     void dark;
     if (renderer) {
-      const themedFrame = requestAnimationFrame(() => {   // after the page's colors switched
+      const themedFrame = window.requestAnimationFrame(() => {   // after the page's colors switched
         floor();
         for (const vitrine of vitrines.values()) if (vitrine.piece.kind === "note" || vitrine.piece.kind === "canvas") face(vitrine);
         wake();

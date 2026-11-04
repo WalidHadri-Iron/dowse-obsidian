@@ -37,6 +37,14 @@ jobs:
           cp -R "$RUNNER_TEMP/dowse-obsidian-mount/Obsidian.app" "$RUNNER_TEMP/Obsidian.app"
           hdiutil detach "$RUNNER_TEMP/dowse-obsidian-mount"
           echo "OBSIDIAN_EXECUTABLE=$RUNNER_TEMP/Obsidian.app/Contents/MacOS/Obsidian" >> "$GITHUB_ENV"
+      - name: Native settings lifecycle
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a npm run test:settings
+          else
+            npm run test:settings
+          fi
       - name: Mixed readers, checkpoints, native views and Excalidraw
         shell: bash
         env:
@@ -62,5 +70,6 @@ jobs:
         with:
           name: extended-${{ runner.os }}
           path: |
+            .cache/release-validation/settings-*
             .cache/release-validation/views-*
             .cache/release-validation/model-*

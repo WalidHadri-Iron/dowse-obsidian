@@ -1,8 +1,8 @@
 {
   "id": "dowse",
   "name": "Dowse",
-  "version": "0.1.0",
-  "minAppVersion": "1.8.0",
+  "version": "0.1.1",
+  "minAppVersion": "1.15.0",
   "description": "Find anything in your vault by what's in it: notes, PDFs, images, recordings and videos, searched by meaning, on your computer.",
   "author": "Walid Hadri",
   "authorUrl": "https://walidhadri-iron.github.io/dowse/",

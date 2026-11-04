@@ -1,8 +1,19 @@
-# Dowse for Obsidian 0.1.0 — preview
+# Dowse for Obsidian 0.1.1 — preview
 
 Search an Obsidian vault by meaning across notes, PDFs, images, recordings, videos
 and Canvas cards. Processing runs locally, with a one-time download of the selected
 EmbeddingGemma 2 model parts. This is a desktop preview for manual installation.
+
+## Submission preparation
+
+- Release tag `0.1.1` matches the plugin manifest exactly. Individual `main.js`,
+  `manifest.json` and `styles.css` assets support Obsidian's community installer.
+- Dependency licenses/notices are embedded in `main.js` as well as the ZIP.
+- Minimum app version is now **Obsidian 1.15.0**, matching native test coverage.
+- Settings use the host's declarative lifecycle with searchable aliases. View
+  preferences now use Obsidian's vault-scoped storage.
+- Official submission lint checks cover TypeScript and Svelte source. The pinned
+  ONNX GPU-selection setting reports one deprecation warning; lint has no errors.
 
 ## Included
 
@@ -21,7 +32,7 @@ EmbeddingGemma 2 model parts. This is a desktop preview for manual installation.
 
 ## Install
 
-1. Download and unzip `dowse-obsidian-0.1.0.zip`.
+1. Download and unzip `dowse-obsidian-0.1.1.zip`.
 2. Copy its entire `dowse/` folder into a test vault's `.obsidian/plugins/` folder.
 3. Enable Dowse under Settings → Community plugins, open the Dowse tab and choose
    **Turn on for this vault**. Pictures and sound are optional model downloads.
@@ -34,9 +45,9 @@ again. The archive includes dependency licenses/notices. `SHA256SUMS` and
 
 The release's source revision is checked by the linked CI runs. Local validation
 includes 82 unit tests, type/Svelte checks, and actual CPU-model indexing/search
-from the unpacked ZIP in native Windows and Linux Obsidian. CI covers builds on
+in native Obsidian. The previous preview ZIP was also tested in Windows and Linux. CI covers builds on
 Windows/macOS/Linux, native model/reliability checks on macOS/Linux, and extended
-mixed-view/Excalidraw integration. These do not replace manual Apple GPU testing.
+mixed-view/Excalidraw integration and settings enable/disable/processor changes. These do not replace manual Apple GPU testing.
 
 Audio content search currently accepts recordings up to 20 minutes and 32 MiB,
 with a 128 MiB decoded limit. Split longer recordings; oversize files remain found
@@ -47,5 +58,5 @@ initial read can take time and needs local memory/storage. No mobile support yet
 See the README and usage guide for setup and limits, and `measurements/` for the
 scope and limitations of earlier retrieval and larger-vault measurements. The
 current demo GIFs use an original-content synthetic vault; they are illustrations,
-not latency or retrieval benchmarks. This is not yet an Obsidian community-directory
-release.
+not latency or retrieval benchmarks. The Obsidian directory listing requires its own review before installation
+through Community plugins becomes available.

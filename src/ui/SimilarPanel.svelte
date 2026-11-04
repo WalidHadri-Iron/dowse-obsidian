@@ -11,7 +11,7 @@
 
   let { controller, current }: { controller: Controller; current: () => string | null } = $props();
 
-  const stored = () => { try { return localStorage.getItem("dowse-similar-unlinked") === "1"; } catch { return false; } };
+  const stored = () => controller.loadPreference("dowse-similar-unlinked", "0") === "1";
   let path = $state<string | null>(null);
   let found = $state<Shown[]>([]);
   let linked = $state(new Set<string>());
@@ -62,7 +62,7 @@
 
   function setUnlinked(on: boolean): void {
     unlinkedOnly = on;
-    try { localStorage.setItem("dowse-similar-unlinked", on ? "1" : "0"); } catch { /* private storage */ }
+    controller.savePreference("dowse-similar-unlinked", on ? "1" : "0");
   }
 
   onMount(() => {
