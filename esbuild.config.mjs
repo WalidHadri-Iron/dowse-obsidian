@@ -20,19 +20,32 @@ const dev = process.argv.includes("dev");
 
 // The ONNX runtime transformers.js was built against (its own copy if it has one): its WebAssembly and the script
 // that loads it, the build transformers.js asks for (asyncify: WebGPU and the processor in one). The WebAssembly is
-// packed with xz (the `xz` command): 3.7 MB against gzip's 6.6, and Obsidian reads all of main.js at every start
-// (measurements/README.md)
+// packed with xz: 3.7 MB against gzip's 6.6, and Obsidian reads all of main.js at every start (measurements/README.md).
+//
+// The pack is committed (vendor/), not made at each build: xz's output changes between its versions (Ubuntu 26.04's
+// made it 12 bytes longer than 24.04's, and with it every minified name), and Obsidian's review rebuilds main.js and
+// expects the release's bytes. The build checks the pack unpacks to exactly this runtime, with the decompressor the
+// plugin itself uses (xz-decompress, plain JavaScript): no xz is needed to build. A new runtime needs a new pack:
+// `npm run pack-runtime` (xz 5.4, or Python's lzma on Windows), then commit vendor/.
 const transformers = join("node_modules", "@huggingface", "transformers");
 const ort = [join(transformers, "node_modules", "onnxruntime-web", "dist"), join("node_modules", "onnxruntime-web", "dist")]
   .find((folder) => existsSync(join(folder, "ort-wasm-simd-threaded.asyncify.wasm")));
 const runtime = readFileSync(join(ort, "ort-wasm-simd-threaded.asyncify.wasm"));
-const packed = join(".cache", `ort-wasm-${createHash("sha256").update(runtime).digest("hex").slice(0, 16)}.xz`);   // (9 s)
+const packed = join("vendor", `ort-wasm-${createHash("sha256").update(runtime).digest("hex").slice(0, 16)}.xz`);
 if (!existsSync(packed)) {
-  mkdirSync(".cache", { recursive: true });
+  if (!process.argv.includes("pack")) {
+    throw new Error(`No pack for this ONNX runtime (${packed}): run "npm run pack-runtime", then commit it.`);
+  }
+  mkdirSync("vendor", { recursive: true });
   // Python's standard-library lzma uses the same XZ format/preset on Windows, where xz is not normally on PATH.
   const command = process.platform === "win32" ? "python" : "xz";
   const args = process.platform === "win32" ? ["-c", "import lzma,sys; sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(), preset=9 | lzma.PRESET_EXTREME))"] : ["-9e", "--stdout"];
-  writeFileSync(packed, execFileSync(command, args, { input: runtime, maxBuffer: 1 << 30 }));
+  writeFileSync(packed, execFileSync(command, args, { input: runtime, maxBuffer: 1 << 30 }));   // (9 s)
+}
+{
+  const { XzReadableStream } = (await import("xz-decompress")).default;
+  const unpacked = Buffer.from(await new Response(new XzReadableStream(new Blob([readFileSync(packed)]).stream())).arrayBuffer());
+  if (!unpacked.equals(runtime)) throw new Error(`${packed} doesn't unpack to the ONNX runtime in node_modules`);
 }
 const wasm = readFileSync(packed).toString("base64");
 // The runtime's loader also runs under Node, where it loads fs, path, url, util, os and worker_threads. In Obsidian its

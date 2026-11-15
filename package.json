@@ -16,7 +16,8 @@
     "test:media": "node scripts/media-accuracy.mjs",
     "test:views": "node scripts/native-views.mjs",
     "lint": "eslint .",
-    "test:settings": "node scripts/native-settings.mjs"
+    "test:settings": "node scripts/native-settings.mjs",
+    "pack-runtime": "node esbuild.config.mjs production pack"
   },
   "license": "MIT",
   "devDependencies": {
