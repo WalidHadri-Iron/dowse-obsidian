@@ -48,3 +48,15 @@ test("an excerpt cut at a word, with an ellipsis", async () => {
   assert.equal(clip("short", 220), "short");
   assert.equal(clip("Tenancy agreement for the flat on Linden Street, signed in March", 30), "Tenancy agreement for the…");
 });
+
+test("an excerpt with a run of separator dots reads at once", () => {
+  // Between two dots the spaces can belong to the group before or the group after, so a run that
+  // reaches neither end of the excerpt doubles the work for every dot it grows by: 1.5ms at 13
+  // dots, 18ms at 17, 278ms at 21, and a 40-dot run would not finish in a day.
+  const excerpt = `Project notes\n${"· ".repeat(24)}\nStatus update follows.`;
+  const started = performance.now();
+  const read = readable(excerpt);
+  const took = performance.now() - started;
+  assert.equal(read, `Project notes\n${"· ".repeat(24)}Status update follows.`);
+  assert.ok(took < 200, `an excerpt with a 24-dot run took ${Math.round(took)}ms to read`);
+});

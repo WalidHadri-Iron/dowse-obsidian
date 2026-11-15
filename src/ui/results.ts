@@ -118,7 +118,7 @@ export function readable(excerpt: string): string {
     .replace(/(^|\s)#{1,6}\s+/g, "$1")                             // heading hashes
     .replace(/\*\*|__|(?<!\w)[*_](?=\S)|(?<=\S)[*_](?!\w)|`+/g, "")  // emphasis, code
     .replace(/\s*\|[\s|:-]*\|\s*|\s*\|\s*/g, " · ")             // table cells
-    .replace(/^(\s*·\s*)+|(\s*·\s*)+$/g, "")
+    .replace(/^(?:\s*·)+\s*|\s*(?:·\s*)+$/g, "")       // each group starts at a dot: one way to match
     .replace(/\s{2,}/g, " ")
     .trim();
 }
