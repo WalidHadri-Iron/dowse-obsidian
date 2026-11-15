@@ -206,7 +206,7 @@ depends on the runner. A configured job is not evidence that a particular revisi
 passed: inspect its run and saved artifacts before distributing that revision.
 
 For a release, align `manifest.json`, `package.json`, the lockfile and `versions.json`,
-write `RELEASE_NOTES.md`, then push a tag equal to the version (`0.1.3`, no `v`).
+write `RELEASE_NOTES.md`, then push a tag equal to the version (`0.1.4`, no `v`).
 [`Release`](../.github/workflows/release.yml) checks the versions, runs lint, types,
 tests and the build, attests the provenance of `main.js`, `manifest.json` and
 `styles.css`, and drafts the GitHub release with those three files. Review the draft,

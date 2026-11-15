@@ -9,7 +9,7 @@ from the owner's Obsidian account at <https://community.obsidian.md>.
 - Plugin ID: `dowse`; name: `Dowse`; author: `Walid Hadri`.
 - Minimum app version: **1.15.0**, matching the native test runtime. A recent
   installer is also needed for the embedded inference runtime.
-- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.3`),
+- GitHub release tag must exactly match `manifest.json`'s `version` (`0.1.4`),
   without a `v` prefix. A version such as `0.1.0` is valid; 1.0 is not required.
 - The release holds only **main.js**, **manifest.json** and **styles.css**: the
   directory recommends no other files (Obsidian downloads only these three).
