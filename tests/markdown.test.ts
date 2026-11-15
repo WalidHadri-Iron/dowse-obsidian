@@ -70,3 +70,33 @@ test("a note is read with its title; one without words is kept for keyword searc
   assert.equal(named.pieces[0].text, null);
   assert.equal(readNote("Empty.md", "---\ntags: [a]\n---\n").note, "no text");
 });
+
+test("trailing whitespace of any kind comes off a line, and only at the end", () => {
+  assert.equal(plain("text \t  　﻿"), "text");
+  assert.equal(plain("  leading and   inner spaces stay  "), "  leading and   inner spaces stay");
+  assert.equal(plain("| a |   "), "| a |");
+  assert.equal(plain("    "), "");
+});
+
+test("a wide table's padded rows are read in time with their length, not its square", () => {
+  // A generated table row is mostly padding and ends at the cell wall, so there is no trailing
+  // whitespace to take off. Looking for it without an anchor starts again at every offset in the
+  // padding, and each start scans the rest of the run: 1.3 seconds for one 45,000-character row.
+  const row = `| item |${" ".repeat(40_000)}|`;
+  const note = Array.from({ length: 20 }, () => row).join("\n");
+  const started = performance.now();
+  const read = lines(note);
+  const took = performance.now() - started;
+  assert.deepEqual([read.length, read[0].text], [20, row]);
+  assert.ok(took < 3000, `20 rows of 40,000 characters took ${Math.round(took)}ms to read`);
+});
+
+test("padded lines inside a code fence are read in time with their length too", () => {
+  const row = `| item |${" ".repeat(40_000)}|`;
+  const note = ["```", ...Array.from({ length: 20 }, () => row), "```"].join("\n");
+  const started = performance.now();
+  const read = lines(note);
+  const took = performance.now() - started;
+  assert.deepEqual([read.length, read[0].text], [20, row]);
+  assert.ok(took < 3000, `20 fenced rows of 40,000 characters took ${Math.round(took)}ms to read`);
+});
