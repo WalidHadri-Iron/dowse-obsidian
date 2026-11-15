@@ -100,3 +100,15 @@ test("padded lines inside a code fence are read in time with their length too", 
   assert.deepEqual([read.length, read[0].text], [20, row]);
   assert.ok(took < 3000, `20 fenced rows of 40,000 characters took ${Math.round(took)}ms to read`);
 });
+
+test("a long run of blank lines, or a long comment, is read in time with its length", () => {
+  // The passage being gathered was measured anew at every line, and a run of blank lines never closes one:
+  // 40,000 blank lines (or a 40,000-line %% comment, read as blank lines) took 3.6 seconds.
+  for (const note of ["Intro\n" + "\n".repeat(40_000) + "End", "Intro\n%%\n" + "hidden\n".repeat(40_000) + "%%\nEnd"]) {
+    const started = performance.now();
+    const read = readNote("Long.md", note);
+    const took = performance.now() - started;
+    assert.deepEqual(read.pieces.map((p) => p.body), ["Intro", "End"]);
+    assert.ok(took < 1000, `${note.length} characters took ${Math.round(took)}ms to read`);
+  }
+});

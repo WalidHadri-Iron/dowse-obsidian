@@ -118,28 +118,43 @@ export function lines(source: string): { text: string; line: number; heading: bo
 export function passages(noteLines: { text: string; line: number; heading: boolean }[], size = PASSAGE,
                          overlap = OVERLAP): { text: string; first: number; last: number }[] {
   const out: { text: string; first: number; last: number }[] = [];
+  // The passage being gathered, with its length and how many of its lines have words, kept as it grows: measured anew
+  // at every line, a long run of blank lines (or a long %% comment, read as blank lines) took time with its square,
+  // 3.6 s for 40,000 of them.
   let current: { text: string; line: number }[] = [];
-  const length = (group: { text: string }[]) => group.reduce((sum, l) => sum + l.text.length + 1, 0);
+  let length = 0, worded = 0;
+  const start = (group: { text: string; line: number }[]) => {
+    current = group;
+    length = group.reduce((sum, l) => sum + l.text.length + 1, 0);
+    worded = group.filter((l) => l.text.trim()).length;
+  };
   const close = (keep: boolean) => {
     const text = current.map((l) => l.text).join("\n").replace(/\n{3,}/g, "\n\n").trim();
     if (text) out.push({ text, first: current[0].line, last: current[current.length - 1].line });
-    if (!keep) { current = []; return; }
+    if (!keep) { start([]); return; }
     const tail: { text: string; line: number }[] = [];
-    for (let i = current.length - 1; i >= 0 && length([...tail, current[i]]) <= overlap; i--) tail.unshift(current[i]);
-    current = tail.length < current.length ? tail : [];
+    let kept = 0;
+    for (let i = current.length - 1; i >= 0 && kept + current[i].text.length + 1 <= overlap; i--) {
+      tail.push(current[i]);
+      kept += current[i].text.length + 1;
+    }
+    tail.reverse();
+    start(tail.length < current.length ? tail : []);
   };
   for (const line of noteLines) {
-    if (line.heading && current.some((l) => l.text.trim())) close(false);
+    if (line.heading && worded) close(false);
     if (line.text.length > size) {   // a line longer than a passage: cut it as Dowse cuts any text
-      if (current.some((l) => l.text.trim())) close(false);
+      if (worded) close(false);
       for (const piece of chunks(line.text, size, overlap)) out.push({ text: piece, first: line.line, last: line.line });
-      current = [];
+      start([]);
       continue;
     }
-    if (length(current) + line.text.length + 1 > size && current.some((l) => l.text.trim())) close(true);
+    if (length + line.text.length + 1 > size && worded) close(true);
     current.push({ text: line.text, line: line.line });
+    length += line.text.length + 1;
+    if (line.text.trim()) worded++;
   }
-  if (current.some((l) => l.text.trim())) close(false);
+  if (worded) close(false);
   return out;
 }
 
