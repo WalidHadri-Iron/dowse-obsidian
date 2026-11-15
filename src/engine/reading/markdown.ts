@@ -44,8 +44,8 @@ export function frontmatter(lines: string[]): Frontmatter {
 
 // Trailing space comes off with trimEnd(), never /\s+$/. That pattern has no start anchor, so the engine tries it at
 // every offset, and on a line padded with spaces that ends at a table wall each try fails only after scanning the rest
-// of the padding: time grows with the square of the line. A generated 45,000-character row took 1.3s, and a note full
-// of them held the app at launch. trimEnd() walks back from the end once and strips the same characters.
+// of the padding: time grows with the square of the line. One generated 45,000-character table row took 3.5s, and a
+// note of ~1,600 such rows held the app at launch for over 13 minutes. trimEnd() walks back from the end once and strips the same characters.
 
 /** A line as its words: links as what they say, embeds and markup left out. */
 export function plain(line: string): string {
